@@ -1,0 +1,74 @@
+/**
+ * 数字减重助手 - 设计系统样式变量
+ * 基于产品需求文档的设计规范定制
+ */
+
+// 导入设计系统
+@import "@/styles/design-system.scss";
+
+/**
+ * 覆盖uni-app默认样式变量，使用医疗主题设计
+ */
+
+/* 颜色变量 - 使用设计系统定义的颜色 */
+
+/* 行为相关颜色 */
+$uni-color-primary: $primary-color; // 医疗蓝 #168FB5
+$uni-color-success: $success-color; // #35A982
+$uni-color-warning: $warning-color; // #E99A3A
+$uni-color-error: $error-color; // #E25F63
+
+/* 文字基本颜色 */
+$uni-text-color: $gray-800; // 基本色
+$uni-text-color-inverse: $white; // 反色
+$uni-text-color-grey: $gray-500; // 辅助灰色，如加载更多的提示信息
+$uni-text-color-placeholder: $gray-400;
+$uni-text-color-disable: $gray-300;
+
+/* 背景颜色 */
+$uni-bg-color: $white;
+$uni-bg-color-grey: $gray-100;
+$uni-bg-color-hover: $gray-200; // 点击状态颜色
+$uni-bg-color-mask: rgba(0, 0, 0, 0.4); // 遮罩颜色
+
+/* 边框颜色 */
+$uni-border-color: $gray-300;
+
+/* 尺寸变量 - 使用设计系统定义的尺寸 */
+
+/* 文字尺寸 */
+$uni-font-size-sm: $font-size-sm; // 22rpx
+$uni-font-size-base: $font-size-base; // 24rpx
+$uni-font-size-lg: $font-size-lg; // 28rpx
+
+/* 图片尺寸 */
+$uni-img-size-sm: 40rpx;
+$uni-img-size-base: 52rpx;
+$uni-img-size-lg: 80rpx;
+
+/* Border Radius */
+$uni-border-radius-sm: $border-radius-sm; // 8rpx
+$uni-border-radius-base: $border-radius-md; // 12rpx
+$uni-border-radius-lg: $border-radius-lg; // 16rpx
+$uni-border-radius-circle: $border-radius-full; // 50%
+
+/* 水平间距 */
+$uni-spacing-row-sm: $spacing-xs; // 8rpx
+$uni-spacing-row-base: $spacing-sm; // 16rpx
+$uni-spacing-row-lg: $spacing-md; // 24rpx
+
+/* 垂直间距 */
+$uni-spacing-col-sm: $spacing-xs; // 8rpx
+$uni-spacing-col-base: $spacing-sm; // 16rpx
+$uni-spacing-col-lg: $spacing-md; // 24rpx
+
+/* 透明度 */
+$uni-opacity-disabled: 0.3; // 组件禁用态的透明度
+
+/* 医疗主题场景相关 */
+$uni-color-title: $gray-800; // 文章标题颜色
+$uni-font-size-title: $font-size-xl; // 32rpx
+$uni-color-subtitle: $primary-color; // 二级标题颜色 - 医疗蓝
+$uni-font-size-subtitle: $font-size-lg; // 28rpx
+$uni-color-paragraph: $gray-700; // 文章段落颜色
+$uni-font-size-paragraph: $font-size-base; // 24rpx

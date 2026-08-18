@@ -1,0 +1,680 @@
+// 数字减重助手设计系统
+// 视觉基准：清爽的蓝白临床卡片、低对比阴影与高可读数据层级
+
+// ==================== 颜色系统 ====================
+// 主色调：参考图中的清透医疗蓝
+$primary-color: #168FB5;
+$primary-light: #36A9CA;
+$primary-dark: #0C6F91;
+
+// 辅助色：用于雾面背景、图标底与弱强调区域
+$secondary-color: #D8F1F7;
+$secondary-light: #EDF9FC;
+$secondary-dark: #A8DDE9;
+
+// 强调色：只用于提醒与少量状态标签
+$accent-color: #F28B64;
+$accent-light: #F6AA8D;
+$accent-dark: #D96C45;
+
+// 中性色
+$white: #FFFFFF;
+$gray-50: #F7FBFC;
+$gray-100: #EFF6F8;
+$gray-200: #DCE9ED;
+$gray-300: #C7D8DE;
+$gray-400: #91A4AC;
+$gray-500: #71858F;
+$gray-600: #536A75;
+$gray-700: #334C59;
+$gray-800: #1C3544;
+$gray-900: #102733;
+
+// 功能色
+$success-color: #35A982;
+$warning-color: #E99A3A;
+$error-color: #E25F63;
+$info-color: $primary-color;
+
+// ==================== 渐变效果 ====================
+$primary-gradient: linear-gradient(135deg, #178DB4 0%, #1EA0C4 100%);
+$secondary-gradient: linear-gradient(135deg, $secondary-color 0%, $secondary-dark 100%);
+$accent-gradient: linear-gradient(135deg, $accent-color 0%, $accent-dark 100%);
+$medical-gradient: linear-gradient(150deg, #F4FBFD 0%, #DDF3F9 100%);
+
+// ==================== 尺寸系统 ====================
+// 间距
+$spacing-xs: 8rpx;
+$spacing-sm: 16rpx;
+$spacing-md: 24rpx;
+$spacing-lg: 32rpx;
+$spacing-xl: 48rpx;
+$spacing-2xl: 64rpx;
+
+// 圆角
+$border-radius-sm: 10rpx;
+$border-radius-md: 16rpx;
+$border-radius-lg: 22rpx;
+$border-radius-xl: 28rpx;
+$border-radius-2xl: 36rpx;
+$border-radius-full: 50%;
+
+// 字体大小
+$font-size-xs: 20rpx;
+$font-size-sm: 22rpx;
+$font-size-base: 24rpx;
+$font-size-md: 26rpx;
+$font-size-lg: 28rpx;
+$font-size-xl: 32rpx;
+$font-size-2xl: 36rpx;
+$font-size-3xl: 42rpx;
+
+// 字体粗细
+$font-weight-normal: 400;
+$font-weight-medium: 500;
+$font-weight-semibold: 600;
+$font-weight-bold: 700;
+
+// 行高
+$line-height-tight: 1.2;
+$line-height-normal: 1.4;
+$line-height-relaxed: 1.6;
+
+// ==================== 阴影系统 ====================
+$shadow-sm: 0 3rpx 10rpx rgba(33, 91, 111, 0.055);
+$shadow-md: 0 10rpx 28rpx rgba(33, 91, 111, 0.075);
+$shadow-lg: 0 18rpx 42rpx rgba(33, 91, 111, 0.1);
+$shadow-xl: 0 26rpx 56rpx rgba(33, 91, 111, 0.13);
+
+// 医疗主题阴影
+$shadow-primary: 0 12rpx 26rpx rgba($primary-color, 0.22);
+$shadow-accent: 0 10rpx 24rpx rgba($accent-color, 0.2);
+
+// ==================== 按钮样式 ====================
+// 主按钮（渐变效果）
+@mixin btn-primary {
+  background: $primary-gradient;
+  border: none;
+  border-radius: $border-radius-md;
+  color: $white;
+  font-weight: $font-weight-semibold;
+  box-shadow: $shadow-primary;
+  transition: all 0.3s ease;
+  
+  &:active {
+    transform: scale(0.98);
+    box-shadow: $shadow-sm;
+  }
+  
+  &.disabled {
+    background: $gray-300;
+    box-shadow: none;
+    pointer-events: none;
+  }
+}
+
+// 次要按钮（线框样式）
+@mixin btn-secondary {
+  background: transparent;
+  border: 2rpx solid $primary-color;
+  border-radius: $border-radius-md;
+  color: $primary-color;
+  font-weight: $font-weight-medium;
+  transition: all 0.3s ease;
+  
+  &:active {
+    background: rgba($primary-color, 0.1);
+    transform: scale(0.98);
+  }
+  
+  &.disabled {
+    border-color: $gray-300;
+    color: $gray-300;
+    pointer-events: none;
+  }
+}
+
+// 强调按钮
+@mixin btn-accent {
+  background: $accent-gradient;
+  border: none;
+  border-radius: $border-radius-md;
+  color: $white;
+  font-weight: $font-weight-semibold;
+  box-shadow: $shadow-accent;
+  transition: all 0.3s ease;
+  
+  &:active {
+    transform: scale(0.98);
+    box-shadow: $shadow-sm;
+  }
+}
+
+// 文本按钮
+@mixin btn-text {
+  background: transparent;
+  border: none;
+  color: $primary-color;
+  font-weight: $font-weight-medium;
+  transition: all 0.3s ease;
+  
+  &:active {
+    color: $primary-dark;
+    transform: scale(0.98);
+  }
+}
+
+// ==================== 输入框样式 ====================
+@mixin input-base {
+  background-color: #F5FAFC;
+  border: 2rpx solid #E0EDF1;
+  border-radius: $border-radius-md;
+  color: $gray-800;
+  font-size: $font-size-md;
+  transition: all 0.3s ease;
+  
+  &:focus {
+    border-color: $primary-color;
+    background-color: $white;
+    box-shadow: 0 0 0 4rpx rgba($primary-color, 0.1);
+  }
+  
+  &::placeholder {
+    color: $gray-400;
+  }
+}
+
+// ==================== 卡片样式 ====================
+@mixin card-base {
+  background-color: $white;
+  border-radius: $border-radius-xl;
+  box-shadow: $shadow-md;
+  border: 1rpx solid rgba(207, 229, 237, 0.72);
+  overflow: hidden;
+}
+
+@mixin card-medical {
+  @include card-base;
+  border-left: 4rpx solid $primary-color;
+}
+
+// ==================== 医疗主题组件 ====================
+// 医疗图标容器
+@mixin medical-icon-container {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: $border-radius-full;
+  background: #E5F6FA;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6rpx 16rpx rgba($primary-color, 0.12);
+}
+
+// 健康数据卡片
+@mixin health-data-card {
+  @include card-base;
+  padding: $spacing-lg;
+  text-align: center;
+  
+  .data-value {
+    font-size: $font-size-2xl;
+    font-weight: $font-weight-bold;
+    color: $primary-color;
+    margin-bottom: $spacing-xs;
+  }
+  
+  .data-label {
+    font-size: $font-size-sm;
+    color: $gray-600;
+  }
+}
+
+// 状态指示器
+@mixin status-indicator($color) {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: $border-radius-full;
+  background-color: $color;
+  display: inline-block;
+  margin-right: $spacing-xs;
+}
+
+// ==================== 动画效果 ====================
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-20px) rotate(180deg);
+  }
+}
+
+// ==================== 响应式断点 ====================
+$breakpoint-sm: 576rpx;
+$breakpoint-md: 768rpx;
+$breakpoint-lg: 992rpx;
+$breakpoint-xl: 1200rpx;
+
+// ==================== 工具类 ====================
+// 文本颜色
+.text-primary { color: $primary-color !important; }
+.text-secondary { color: $secondary-color !important; }
+.text-accent { color: $accent-color !important; }
+.text-success { color: $success-color !important; }
+.text-warning { color: $warning-color !important; }
+.text-error { color: $error-color !important; }
+.text-gray { color: $gray-600 !important; }
+.text-muted { color: $gray-400 !important; }
+
+// 背景颜色
+.bg-primary { background-color: $primary-color !important; }
+.bg-secondary { background-color: $secondary-color !important; }
+.bg-accent { background-color: $accent-color !important; }
+.bg-white { background-color: $white !important; }
+.bg-gray { background-color: $gray-100 !important; }
+
+// 渐变背景
+.bg-primary-gradient { background: $primary-gradient !important; }
+.bg-medical-gradient { background: $medical-gradient !important; }
+.bg-accent-gradient { background: $accent-gradient !important; }
+
+// 间距
+.p-xs { padding: $spacing-xs !important; }
+.p-sm { padding: $spacing-sm !important; }
+.p-md { padding: $spacing-md !important; }
+.p-lg { padding: $spacing-lg !important; }
+.p-xl { padding: $spacing-xl !important; }
+
+.m-xs { margin: $spacing-xs !important; }
+.m-sm { margin: $spacing-sm !important; }
+.m-md { margin: $spacing-md !important; }
+.m-lg { margin: $spacing-lg !important; }
+.m-xl { margin: $spacing-xl !important; }
+
+// 圆角
+.rounded-sm { border-radius: $border-radius-sm !important; }
+.rounded-md { border-radius: $border-radius-md !important; }
+.rounded-lg { border-radius: $border-radius-lg !important; }
+.rounded-xl { border-radius: $border-radius-xl !important; }
+.rounded-full { border-radius: $border-radius-full !important; }
+
+// 阴影
+.shadow-sm { box-shadow: $shadow-sm !important; }
+.shadow-md { box-shadow: $shadow-md !important; }
+.shadow-lg { box-shadow: $shadow-lg !important; }
+.shadow-primary { box-shadow: $shadow-primary !important; }
+.shadow-accent { box-shadow: $shadow-accent !important; }
+
+// 动画
+.animate-fadeIn { animation: fadeIn 0.5s ease-out !important; }
+.animate-slideUp { animation: slideUp 0.3s ease-out !important; }
+.animate-pulse { animation: pulse 2s infinite !important; }
+.animate-float { animation: float 6s ease-in-out infinite !important; }
+
+// 过渡效果
+.transition-all { transition: all 0.3s ease !important; }
+.transition-colors { transition: color 0.3s ease, background-color 0.3s ease !important; }
+.transition-transform { transition: transform 0.3s ease !important; }
+
+// 医疗主题特殊样式
+.medical-border {
+  border-left: 4rpx solid $primary-color !important;
+}
+
+.medical-divider {
+  height: 2rpx;
+  background: linear-gradient(90deg, transparent, $primary-color, transparent) !important;
+  border: none;
+  margin: $spacing-md 0;
+}
+
+.health-status-good {
+  @include status-indicator($success-color);
+}
+
+.health-status-warning {
+  @include status-indicator($warning-color);
+}
+
+.health-status-danger {
+  @include status-indicator($error-color);
+}
+
+// 医疗图标样式
+.medical-icon {
+  font-size: 28rpx;
+  color: $primary-color;
+  margin-right: $spacing-sm;
+}
+
+.emoji-icon {
+  font-size: 32rpx;
+  margin-right: $spacing-sm;
+}
+
+// 数据展示样式
+.data-highlight {
+  font-size: $font-size-xl;
+  font-weight: $font-weight-bold;
+  color: $primary-color;
+  text-align: center;
+  margin: $spacing-sm 0;
+}
+
+.data-unit {
+  font-size: $font-size-sm;
+  color: $gray-500;
+  margin-left: $spacing-xs;
+}
+
+// 医疗表单样式
+.medical-form {
+  .form-group {
+    margin-bottom: $spacing-lg;
+  }
+  
+  .form-label {
+    font-size: $font-size-md;
+    font-weight: $font-weight-medium;
+    color: $gray-700;
+    margin-bottom: $spacing-sm;
+    display: block;
+  }
+  
+  .form-input {
+    @include input-base;
+    width: 100%;
+    height: 90rpx;
+    padding: 0 $spacing-md;
+  }
+  
+  .form-textarea {
+    @include input-base;
+    width: 100%;
+    min-height: 120rpx;
+    padding: $spacing-md;
+    resize: vertical;
+  }
+}
+
+// 医疗按钮组
+.medical-btn-group {
+  display: flex;
+  gap: $spacing-md;
+  
+  .btn {
+    flex: 1;
+    height: 80rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: $font-size-md;
+  }
+  
+  .btn-primary {
+    @include btn-primary;
+  }
+  
+  .btn-secondary {
+    @include btn-secondary;
+  }
+}
+
+// 医疗卡片网格
+.medical-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300rpx, 1fr));
+  gap: $spacing-lg;
+  padding: $spacing-lg;
+}
+
+// 健康指标卡片
+.health-metric-card {
+  @include health-data-card;
+  position: relative;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4rpx;
+    background: $primary-gradient;
+  }
+  
+  .metric-icon {
+    font-size: 40rpx;
+    margin-bottom: $spacing-sm;
+  }
+  
+  .metric-trend {
+    font-size: $font-size-xs;
+    margin-top: $spacing-xs;
+    
+    &.trend-up {
+      color: $success-color;
+    }
+    
+    &.trend-down {
+      color: $error-color;
+    }
+    
+    &.trend-stable {
+      color: $gray-500;
+    }
+  }
+}
+
+// 医生患者头像
+.medical-avatar {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: $border-radius-full;
+  background: $primary-gradient;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: $white;
+  font-weight: $font-weight-semibold;
+  font-size: $font-size-lg;
+  box-shadow: $shadow-primary;
+}
+
+// 医疗时间轴
+.medical-timeline {
+  position: relative;
+  padding-left: 40rpx;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    left: 16rpx;
+    top: 0;
+    bottom: 0;
+    width: 2rpx;
+    background: $secondary-color;
+  }
+  
+  .timeline-item {
+    position: relative;
+    margin-bottom: $spacing-lg;
+    
+    &::before {
+      content: '';
+      position: absolute;
+      left: -32rpx;
+      top: 8rpx;
+      width: 12rpx;
+      height: 12rpx;
+      border-radius: $border-radius-full;
+      background: $primary-color;
+      border: 3rpx solid $white;
+      box-shadow: $shadow-sm;
+    }
+  }
+}
+
+// 医疗标签
+.medical-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 6rpx 12rpx;
+  border-radius: $border-radius-sm;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  
+  &.tag-primary {
+    background: rgba($primary-color, 0.1);
+    color: $primary-color;
+  }
+  
+  &.tag-success {
+    background: rgba($success-color, 0.1);
+    color: $success-color;
+  }
+  
+  &.tag-warning {
+    background: rgba($warning-color, 0.1);
+    color: $warning-color;
+  }
+  
+  &.tag-error {
+    background: rgba($error-color, 0.1);
+    color: $error-color;
+  }
+}
+
+// 医疗进度条
+.medical-progress {
+  width: 100%;
+  height: 8rpx;
+  background: $gray-200;
+  border-radius: $border-radius-sm;
+  overflow: hidden;
+  
+  .progress-bar {
+    height: 100%;
+    background: $primary-gradient;
+    border-radius: $border-radius-sm;
+    transition: width 0.3s ease;
+  }
+}
+
+// 医疗统计数字
+.medical-stat {
+  text-align: center;
+  
+  .stat-number {
+    font-size: $font-size-3xl;
+    font-weight: $font-weight-bold;
+    color: $primary-color;
+    line-height: $line-height-tight;
+  }
+  
+  .stat-label {
+    font-size: $font-size-sm;
+    color: $gray-600;
+    margin-top: $spacing-xs;
+  }
+  
+  .stat-change {
+    font-size: $font-size-xs;
+    margin-top: $spacing-xs;
+    
+    &.positive {
+      color: $success-color;
+    }
+    
+    &.negative {
+      color: $error-color;
+    }
+  }
+}
+
+// 医疗提示框
+.medical-alert {
+  padding: $spacing-md;
+  border-radius: $border-radius-md;
+  margin-bottom: $spacing-md;
+  display: flex;
+  align-items: flex-start;
+  
+  .alert-icon {
+    font-size: 24rpx;
+    margin-right: $spacing-sm;
+    flex-shrink: 0;
+  }
+  
+  .alert-content {
+    flex: 1;
+    font-size: $font-size-sm;
+    line-height: $line-height-normal;
+  }
+  
+  &.alert-info {
+    background: rgba($primary-color, 0.1);
+    border-left: 4rpx solid $primary-color;
+    
+    .alert-icon {
+      color: $primary-color;
+    }
+  }
+  
+  &.alert-success {
+    background: rgba($success-color, 0.1);
+    border-left: 4rpx solid $success-color;
+    
+    .alert-icon {
+      color: $success-color;
+    }
+  }
+  
+  &.alert-warning {
+    background: rgba($warning-color, 0.1);
+    border-left: 4rpx solid $warning-color;
+    
+    .alert-icon {
+      color: $warning-color;
+    }
+  }
+  
+  &.alert-error {
+    background: rgba($error-color, 0.1);
+    border-left: 4rpx solid $error-color;
+    
+    .alert-icon {
+      color: $error-color;
+    }
+  }
+}

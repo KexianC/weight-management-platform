@@ -1,0 +1,551 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PATIENT
+  DOCTOR
+  NUTRITIONIST
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum Gender {
+  UNKNOWN
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum AuthProvider {
+  WECHAT_MINI_PROGRAM
+  WECHAT_OPEN
+}
+
+enum SmsPurpose {
+  REGISTER
+  LOGIN
+  RESET_PASSWORD
+  VERIFY_PHONE
+}
+
+enum RelationStatus {
+  PENDING
+  ACTIVE
+  ENDED
+}
+
+enum InviteStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum HealthRecordType {
+  WEIGHT
+  DIET
+  EXERCISE
+  MEDICATION
+  QUESTIONNAIRE
+  GENERAL
+  BLOOD_PRESSURE
+  SYMPTOM
+}
+
+enum MealType {
+  BREAKFAST
+  LUNCH
+  DINNER
+  SNACK
+}
+
+enum TaskType {
+  WEIGHT
+  DIET
+  EXERCISE
+  MEDICATION
+  QUESTIONNAIRE
+  GENERAL
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  OVERDUE
+}
+
+enum FollowUpType {
+  WEIGHT
+  DIET
+  EXERCISE
+  MEDICATION
+  QUESTIONNAIRE
+  GENERAL
+  OFFLINE
+  PHONE
+}
+
+enum FollowUpStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  OVERDUE
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  SYSTEM
+  HEALTH_RECORD
+}
+
+enum NotificationType {
+  GENERAL
+  FOLLOW_UP
+  MESSAGE
+  TASK
+  HEALTH_ALERT
+  RELATION
+  SYSTEM
+}
+
+enum MediaStatus {
+  PENDING
+  READY
+  DELETED
+  FAILED
+}
+
+enum CalorieEstimateStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum PatientArchiveStatus {
+  DRAFT
+  COMPLETED
+}
+
+enum CareSummaryPeriod {
+  WEEKLY
+  MONTHLY
+}
+
+model User {
+  id           String     @id @default(cuid())
+  phone        String     @db.VarChar(32)
+  email        String?    @unique @db.VarChar(191)
+  passwordHash String?    @db.VarChar(255)
+  displayName  String     @db.VarChar(80)
+  avatarUrl    String?    @db.VarChar(500)
+  role         UserRole
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  disabledAt   DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  patientProfile          PatientProfile?
+  practitionerProfile     PractitionerProfile?
+  authIdentities          AuthIdentity[]
+  patientRelations        CareRelation[]       @relation("PatientRelations")
+  practitionerRelations   CareRelation[]       @relation("PractitionerRelations")
+  careInvites             CareInvite[]
+  healthRecords           HealthRecord[]
+  assignedTasks           PatientTask[]        @relation("AssignedTasks")
+  receivedTasks           PatientTask[]        @relation("ReceivedTasks")
+  sentMessages            Message[]            @relation("SentMessages")
+  receivedMessages        Message[]            @relation("ReceivedMessages")
+  refreshTokens           RefreshToken[]
+  consents                Consent[]
+  auditLogs               AuditLog[]
+  followUpsAsPatient      FollowUp[]           @relation("PatientFollowUps")
+  followUpsAsPractitioner FollowUp[]           @relation("PractitionerFollowUps")
+  notifications           Notification[]
+  mediaAssets             MediaAsset[]
+  calorieEstimates        CalorieEstimate[]
+  patientArchive          PatientArchive?      @relation("PatientArchivePatient")
+  patientArchivesCreated  PatientArchive[]     @relation("PatientArchivesCreatedBy")
+  patientArchivesUpdated  PatientArchive[]     @relation("PatientArchivesUpdatedBy")
+  careSummariesAsPatient  CareSummary[]         @relation("PatientCareSummaries")
+  careSummariesAuthored   CareSummary[]         @relation("PractitionerCareSummaries")
+
+  @@unique([phone, role])
+}
+
+model PatientProfile {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  gender                Gender    @default(UNKNOWN)
+  birthDate             DateTime?
+  heightCm              Decimal?  @db.Decimal(5, 2)
+  targetWeightKg        Decimal?  @db.Decimal(5, 2)
+  initialWeightKg       Decimal?  @db.Decimal(5, 2)
+  medicalHistory        Json?
+  allergies             Json?
+  emergencyContactName  String?   @db.VarChar(80)
+  emergencyContactPhone String?   @db.VarChar(32)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PatientArchive {
+  id                String               @id @default(cuid())
+  archiveNo         String               @unique @db.VarChar(32)
+  patientId         String               @unique
+  status            PatientArchiveStatus @default(DRAFT)
+  templateVersion   String               @default("TCM_WEIGHT_V1") @db.VarChar(40)
+  answers           Json
+  completionPercent Int                  @default(0) @db.UnsignedTinyInt
+  createdById       String
+  updatedById       String
+  completedAt       DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  patient           User                 @relation("PatientArchivePatient", fields: [patientId], references: [id], onDelete: Restrict)
+  createdBy         User                 @relation("PatientArchivesCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy         User                 @relation("PatientArchivesUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([status, updatedAt])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
+model PractitionerProfile {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  hospital      String?   @db.VarChar(160)
+  department    String?   @db.VarChar(120)
+  title         String?   @db.VarChar(120)
+  specialty     String?   @db.VarChar(500)
+  licenseNumber String?   @unique @db.VarChar(80)
+  introduction  String?   @db.Text
+  verifiedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuthIdentity {
+  id         String       @id @default(cuid())
+  userId     String
+  provider   AuthProvider
+  externalId String       @db.VarChar(191)
+  unionId    String?      @db.VarChar(191)
+  metadata   Json?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalId])
+  @@index([unionId])
+}
+
+model SmsChallenge {
+  id          String     @id @default(cuid())
+  phone       String     @db.VarChar(32)
+  purpose     SmsPurpose
+  codeHash    String     @db.VarChar(64)
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(5)
+  expiresAt   DateTime
+  verifiedAt  DateTime?
+  usedAt      DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([phone, purpose, createdAt])
+  @@index([expiresAt])
+}
+
+model CareInvite {
+  id             String         @id @default(cuid())
+  code           String         @unique @db.VarChar(40)
+  practitionerId String
+  expiresAt      DateTime
+  maxUses        Int            @default(1)
+  useCount       Int            @default(0)
+  status         InviteStatus   @default(ACTIVE)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  practitioner   User           @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
+  relations      CareRelation[]
+
+  @@index([practitionerId, status, expiresAt])
+}
+
+model CareRelation {
+  id             String         @id @default(cuid())
+  patientId      String
+  practitionerId String
+  inviteId       String?
+  status         RelationStatus @default(PENDING)
+  inviteCode     String?        @unique @db.VarChar(40)
+  bindMethod     String         @default("INVITE") @db.VarChar(32)
+  note           String?        @db.VarChar(500)
+  lastContactAt  DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  endedAt        DateTime?
+  endedReason    String?        @db.VarChar(500)
+  patient        User           @relation("PatientRelations", fields: [patientId], references: [id])
+  practitioner   User           @relation("PractitionerRelations", fields: [practitionerId], references: [id])
+  invite         CareInvite?    @relation(fields: [inviteId], references: [id], onDelete: SetNull)
+
+  @@unique([patientId, practitionerId])
+  @@index([practitionerId, status])
+  @@index([patientId, status])
+  @@index([inviteId])
+}
+
+model HealthRecord {
+  id           String           @id @default(cuid())
+  patientId    String
+  recordType   HealthRecordType @default(WEIGHT)
+  weightKg     Decimal?         @db.Decimal(5, 2)
+  waistCm      Decimal?         @db.Decimal(5, 2)
+  bodyFatPct   Decimal?         @db.Decimal(5, 2)
+  mealType     MealType?
+  mealItems    Json?
+  caloriesKcal Decimal?         @db.Decimal(8, 2)
+  imageUrls    Json?
+  payload      Json?
+  measuredAt   DateTime
+  source       String           @default("MANUAL") @db.VarChar(32)
+  note         String?          @db.VarChar(500)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  patient      User             @relation(fields: [patientId], references: [id])
+  assets       MediaAsset[]
+
+  @@index([patientId, measuredAt])
+  @@index([patientId, recordType, measuredAt])
+}
+
+model PatientTask {
+  id             String     @id @default(cuid())
+  patientId      String
+  assignedById   String
+  taskType       TaskType   @default(GENERAL)
+  priority       Priority   @default(NORMAL)
+  title          String     @db.VarChar(120)
+  description    String?    @db.VarChar(500)
+  content        Json?
+  result         Json?
+  recurrenceRule Json?
+  status         TaskStatus @default(PENDING)
+  dueAt          DateTime?
+  completedAt    DateTime?
+  cancelledAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  patient        User       @relation("ReceivedTasks", fields: [patientId], references: [id])
+  assignedBy     User       @relation("AssignedTasks", fields: [assignedById], references: [id])
+
+  @@index([patientId, status])
+  @@index([assignedById, status, dueAt])
+}
+
+model Message {
+  id                  String      @id @default(cuid())
+  senderId            String
+  receiverId          String
+  type                MessageType @default(TEXT)
+  content             String      @db.Text
+  attachments         Json?
+  contextType         String?     @db.VarChar(50)
+  contextId           String?     @db.VarChar(80)
+  readAt              DateTime?
+  deletedBySenderAt   DateTime?
+  deletedByReceiverAt DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  sender              User        @relation("SentMessages", fields: [senderId], references: [id])
+  receiver            User        @relation("ReceivedMessages", fields: [receiverId], references: [id])
+
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, readAt, createdAt])
+}
+
+model RefreshToken {
+  id           String    @id @default(cuid())
+  userId       String
+  tokenHash    String    @unique @db.VarChar(255)
+  familyId     String    @db.VarChar(64)
+  replacedById String?   @db.VarChar(191)
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  lastUsedAt   DateTime?
+  userAgent    String?   @db.VarChar(500)
+  ipAddress    String?   @db.VarChar(64)
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([familyId, revokedAt])
+}
+
+model Consent {
+  id        String    @id @default(cuid())
+  userId    String
+  version   String    @db.VarChar(32)
+  scope     String    @db.VarChar(80)
+  grantedAt DateTime  @default(now())
+  revokedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, scope])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorId      String?
+  action       String   @db.VarChar(80)
+  resourceType String   @db.VarChar(80)
+  resourceId   String?  @db.VarChar(80)
+  ipAddress    String?  @db.VarChar(64)
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  actor        User?    @relation(fields: [actorId], references: [id])
+
+  @@index([actorId, createdAt])
+  @@index([resourceType, resourceId])
+}
+
+model FollowUp {
+  id                 String         @id @default(cuid())
+  patientId          String
+  practitionerId     String
+  type               FollowUpType   @default(GENERAL)
+  priority           Priority       @default(NORMAL)
+  scheduledAt        DateTime
+  status             FollowUpStatus @default(SCHEDULED)
+  summary            String?        @db.Text
+  note               String?        @db.Text
+  instructions       String?        @db.Text
+  result             Json?
+  recurrenceSeriesId String?        @db.VarChar(191)
+  recurrenceRule     Json?
+  occurrenceIndex    Int            @default(0)
+  startedAt          DateTime?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  patient            User           @relation("PatientFollowUps", fields: [patientId], references: [id])
+  practitioner       User           @relation("PractitionerFollowUps", fields: [practitionerId], references: [id])
+
+  @@index([patientId, scheduledAt])
+  @@index([practitionerId, status, scheduledAt])
+  @@index([recurrenceSeriesId, occurrenceIndex])
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  userId      String
+  type        NotificationType @default(GENERAL)
+  priority    Priority         @default(NORMAL)
+  title       String           @db.VarChar(120)
+  content     String           @db.VarChar(500)
+  relatedType String?          @db.VarChar(50)
+  relatedId   String?          @db.VarChar(80)
+  actionPath  String?          @db.VarChar(500)
+  metadata    Json?
+  expiresAt   DateTime?
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([userId, type, createdAt])
+}
+
+model CareSummary {
+  id             String            @id @default(cuid())
+  patientId      String
+  practitionerId String
+  periodType     CareSummaryPeriod
+  periodStart    DateTime
+  periodEnd      DateTime
+  metrics        Json
+  comment        String            @db.Text
+  publishedAt    DateTime          @default(now())
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  patient        User              @relation("PatientCareSummaries", fields: [patientId], references: [id], onDelete: Cascade)
+  practitioner   User              @relation("PractitionerCareSummaries", fields: [practitionerId], references: [id], onDelete: Restrict)
+
+  @@unique([patientId, practitionerId, periodType, periodStart])
+  @@index([patientId, publishedAt])
+  @@index([practitionerId, publishedAt])
+}
+
+model MediaAsset {
+  id             String        @id @default(cuid())
+  ownerId        String
+  healthRecordId String?
+  provider       String        @default("ALIYUN_OSS") @db.VarChar(32)
+  bucket         String?       @db.VarChar(191)
+  objectKey      String        @unique @db.VarChar(500)
+  url            String?       @db.VarChar(1000)
+  mimeType       String        @db.VarChar(120)
+  sizeBytes      BigInt?
+  sha256         String?       @db.VarChar(64)
+  scope          String        @default("GENERAL") @db.VarChar(50)
+  referenceType  String?       @db.VarChar(50)
+  referenceId    String?       @db.VarChar(191)
+  status         MediaStatus   @default(PENDING)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+  owner          User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  healthRecord   HealthRecord? @relation(fields: [healthRecordId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId, status, createdAt])
+  @@index([referenceType, referenceId])
+  @@index([healthRecordId])
+}
+
+model CalorieEstimate {
+  id            String                @id @default(cuid())
+  userId        String
+  foodName      String?               @db.VarChar(191)
+  amountGrams   Decimal?              @db.Decimal(8, 2)
+  estimatedKcal Decimal?              @db.Decimal(8, 2)
+  source        String                @default("RULE") @db.VarChar(50)
+  inputText     String?               @db.Text
+  imageUrl      String?               @db.VarChar(1000)
+  result        Json?
+  provider      String?               @db.VarChar(80)
+  model         String?               @db.VarChar(120)
+  confidence    Decimal?              @db.Decimal(5, 4)
+  status        CalorieEstimateStatus @default(PENDING)
+  errorMessage  String?               @db.VarChar(500)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}

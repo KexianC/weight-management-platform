@@ -1,0 +1,42 @@
+# Dependencies and package manager caches
+node_modules/
+.pnpm-store/
+
+# Build and runtime outputs
+dist/
+coverage/
+*.log
+*.pid
+*.tsbuildinfo
+.cache/
+.vite/
+
+# Local and production secrets (checked-in examples remain allowed)
+.env
+.env.local
+.env.*.local
+!.env.example
+!**/.env.example
+!**/.env.production
+
+# Deployment bundles and generated release archives
+*.tgz
+deploy/releases/
+
+# Generated QA/audit evidence
+audit-output/
+apps/**/icon-audit/
+apps/**/care-summary-live-qa.png
+apps/**/production-*.png
+apps/**/admin-system-browser.png
+/*-browser.png
+/*-live-qa.png
+/design-qa-comparison.png
+
+# Tooling and OS noise
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
