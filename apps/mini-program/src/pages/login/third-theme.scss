@@ -1,0 +1,49 @@
+.login-container { box-sizing: border-box; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: #fff; color: #08163d; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; overflow-x: hidden; }
+.login-container view, .login-container text, .login-container input, .login-container button { box-sizing: border-box; }
+.header-section { padding: calc(76rpx + env(safe-area-inset-top)) 46rpx 44rpx; background: #fff url('../../static/brand/third-wave.webp') no-repeat right top; background-size: cover; }
+.logo-container { display: flex; align-items: center; gap: 26rpx; margin-bottom: 84rpx; }
+.logo { width: 170rpx; height: 176rpx; flex: none; }
+.brand-copy { display: flex; min-width: 0; flex-direction: column; }
+.brand-word { font-size: 60rpx; line-height: 1.15; letter-spacing: -2rpx; font-weight: 750; color: #05143c; }
+.app-name { display: block; margin-top: 6rpx; font-size: 37rpx; line-height: 1.45; letter-spacing: 3rpx; font-weight: 600; color: #465477; }
+.login-title { display: block; font-size: 68rpx; line-height: 1.3; font-weight: 750; letter-spacing: 2rpx; }
+.app-desc { display: block; margin-top: 12rpx; color: #5d6b8d; font-size: 29rpx; line-height: 1.55; }
+.form-section { padding: 0 46rpx; }
+.form-container { width: 100%; }
+.form-item { margin-bottom: 32rpx; }
+.field-label { display: block; margin-bottom: 14rpx; font-size: 30rpx; line-height: 1.5; font-weight: 600; }
+.input-wrapper { display: flex; align-items: center; height: 100rpx; min-height: 48px; border: 1px solid #d4dbea; border-radius: 12rpx; background: #fff; padding: 0 26rpx; }
+.input-wrapper:focus-within { border-color: #2b5fff; box-shadow: 0 0 0 2px #edf2ff; }
+.input-icon { display: none; }
+.form-input { flex: 1; min-width: 0; width: 100%; height: 100%; color: #08163d; font-size: 30rpx; background: transparent; }
+.password-toggle { flex: none; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin-right: -14rpx; }
+.form-options { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; margin: 4rpx 0 24rpx; min-height: 44px; }
+.remember-password { display: flex; align-items: center; gap: 20rpx; min-height: 44px; }
+.checkbox { display: flex; align-items: center; justify-content: center; flex: none; width: 36rpx; height: 36rpx; min-width: 20px; min-height: 20px; border: 1px solid #8d9ab7; border-radius: 6rpx; background: #fff; }
+.checkbox.checked { border-color: #2b5fff; background: #2b5fff; }
+.option-text { font-size: 28rpx; color: #5d6b8d; }
+.forgot-password { padding: 10rpx 0 10rpx 12rpx; }
+.forgot-text { color: #53658f; font-size: 24rpx; }
+.agreement-section { margin-bottom: 28rpx; }
+.agreement-checkbox { display: flex; align-items: center; flex-wrap: wrap; gap: 8rpx; line-height: 1.7; min-height: 44px; }
+.agreement-checkbox .checkbox { margin-right: 8rpx; }
+.agreement-text, .agreement-link { font-size: 24rpx; line-height: 1.7; }
+.agreement-text { color: #5d6b8d; }.agreement-link { color: #2458f2; padding: 3rpx 0; }
+.login-btn { width: 100%; min-height: 50px; height: 102rpx; display: flex; align-items: center; justify-content: center; margin: 0; padding: 0 24rpx; border: 0; border-radius: 12rpx; background: #2b5fff; color: white; font-size: 34rpx; font-weight: 600; box-shadow: none; }
+.login-btn::after, .staff-entry-button::after, .wechat-login-btn::after { border: 0; }
+.login-btn.disabled { background: #e1e9ff; color: #667cb7; }
+.login-tabs { display: flex; justify-content: center; align-items: center; margin: 18rpx 0 20rpx; gap: 32rpx; }
+.tab-item { padding: 10rpx 8rpx; min-height: 44px; display: flex; align-items: center; border-bottom: 2rpx solid transparent; color: #63718d; font-size: 24rpx; }
+.tab-item.active { color: #2b5fff; border-bottom-color: #2b5fff; }
+.register-section { text-align: center; margin: 12rpx 0 28rpx; line-height: 1.65; }
+.register-text { font-size: 27rpx; color: #63718d; }.register-link { font-size: 27rpx; margin-left: 12rpx; color: #2b5fff; }
+.staff-entry { display: flex; justify-content: center; align-items: center; gap: 20rpx; padding: 44rpx 72rpx calc(42rpx + env(safe-area-inset-bottom)); margin-top: auto; }
+.staff-rule { height: 1px; flex: 1; max-width: 86rpx; background: #e3e8f2; }
+.staff-entry-button { display: block; flex: none; min-height: 44px; font-size: 27rpx; color: #2458db; border: 0; background: transparent; padding: 8rpx 10rpx; margin: 0; line-height: 2; }
+.sms-input { padding-right: 10rpx; }.sms-btn { flex: none; padding: 14rpx 12rpx; color: #2b5fff; font-size: 23rpx; }.sms-btn.disabled { color: #7f8ba6; }
+/* #ifdef MP-WEIXIN */
+.divider-section { display: flex; gap: 16rpx; align-items: center; margin: 12rpx 0 24rpx; }.divider-line { height: 1px; background: #e3e8f2; flex: 1; }.divider-text { color: #77839c; font-size: 24rpx; }
+.wechat-login-btn { background: #2b5fff; color: white; height: 96rpx; min-height: 48px; border-radius: 12rpx; }.wechat-btn-content { display: flex; align-items: center; justify-content: center; gap: 16rpx; height: 100%; font-size: 29rpx; }.wechat-tip { display: block; margin: 16rpx 0; color: #63718d; line-height: 1.7; font-size: 23rpx; text-align: center; }
+/* #endif */
+@media (max-width: 350px) { .header-section { padding-top: calc(52rpx + env(safe-area-inset-top)); }.logo-container { gap: 18rpx; margin-bottom: 66rpx; }.brand-word { font-size: 57rpx; }.app-name { font-size: 34rpx; }.login-title { font-size: 64rpx; }.agreement-text,.agreement-link { font-size: 12px; }.staff-entry { padding-left: 40rpx; padding-right: 40rpx; } }
+@media (min-width: 768px) { .login-container { width: 430px; max-width: 100%; margin: 0 auto; } }

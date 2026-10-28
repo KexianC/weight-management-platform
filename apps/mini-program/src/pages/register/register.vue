@@ -10,30 +10,23 @@
 		<!-- 头部Logo区域 -->
 		<view class="header-section">
 			<view class="logo-container">
-				<image class="logo" src="/static/logo.png" mode="aspectFit"></image>
-				<text class="app-name">数字减重助手</text>
-				<text class="app-desc">创建账号，开启专业健康管理</text>
+				<image class="logo" src="/static/logo.png" alt="MedTalent健康数字助手" aria-label="MedTalent健康数字助手" mode="aspectFit"></image>
+				<text class="app-name">MedTalent健康数字助手</text>
+				<text class="app-desc">患者账号由健管师提供</text>
 			</view>
 		</view>
 		
 		<!-- 注册表单区域 -->
 		<view class="form-section">
-			<view class="form-container">
+			<view v-if="selectedRole !== 'doctor'" class="form-container registration-closed">
+				<text>患者不开放自助注册，请联系健管师获取账号。已有账号继续登录，无需重新注册。</text>
+				<button @click="goToLogin">返回登录</button>
+			</view>
+			<view v-if="selectedRole === 'doctor'" class="form-container">
 				<!-- 角色选择 -->
 				<view class="role-selector">
 					<view class="role-title">选择身份</view>
 					<view class="role-options">
-						<view 
-							class="role-option" 
-							:class="{active: selectedRole === 'patient'}"
-							role="radio"
-							:aria-checked="selectedRole === 'patient'"
-							@click="selectRole('patient')"
-						>
-							<view class="role-icon"><Icon name="User/user-line.svg" size="24" :color="selectedRole === 'patient' ? '$primary-color' : '$gray-500'" /></view>
-							<text class="role-text">患者</text>
-							<text class="role-desc">记录健康数据</text>
-						</view>
 						<view 
 							class="role-option" 
 							:class="{active: selectedRole === 'doctor'}"
@@ -377,7 +370,7 @@
 		computed: {
 			// 是否可以发送短信
 			canSendSms() {
-				return validatePhone(this.formData.phone) && this.smsCountdown === 0
+				return this.selectedRole === 'doctor' && validatePhone(this.formData.phone) && this.smsCountdown === 0
 			},
 			
 			// 密码不一致错误提示
@@ -389,6 +382,7 @@
 			
 			// 是否可以注册
 			canRegister() {
+				if (this.selectedRole !== 'doctor') return false
 				// 微信注册模式的验证
 				if (this.isWechatRegister) {
 					const basicValid = this.formData.phone && 
@@ -430,9 +424,10 @@
 			}
 		},
 		
-		onLoad(options) {
+		onLoad(options = {}) {
+			this.selectedRole = ['doctor', 'nutritionist', 'practitioner'].includes(options.role) ? 'doctor' : 'patient'
 			// 检查是否来自微信登录
-			if (options.fromWechat === 'true') {
+			if (this.selectedRole === 'doctor' && options.fromWechat === 'true') {
 				this.initWechatRegister()
 			}
 		},
@@ -465,13 +460,12 @@
 							this.practitionerRole = wechatRole === 'nutritionist' ? 'nutritionist' : 'doctor'
 							
 							// 微信注册默认同意协议
-							this.agreeToTerms = true
+							this.agreeToTerms = false
 							
-							console.log('微信注册模式初始化完成:', wechatInfo)
-							showToast('请验证手机号并完善微信注册信息', 'none')
+							showToast('请验证手机号并完善注册信息', 'none')
 						} else {
 							console.error('未找到微信注册信息')
-							showToast('微信信息获取失败，请重新登录')
+							showToast('手机号信息获取失败，请重新登录')
 							uni.navigateBack()
 						}
 					} catch (error) {
@@ -483,6 +477,7 @@
 				
 				// 选择角色
 				selectRole(role) {
+					if (role !== 'doctor') return
 					this.selectedRole = role
 					
 					// 清空角色特定字段
@@ -553,16 +548,6 @@
 					
 					showToast('验证码已发送', 'success')
 					
-					// 开发环境显示验证码
-					if (result.data && result.data.code) {
-						console.log('验证码:', result.data.code)
-						uni.showModal({
-							title: '开发提示',
-							content: `验证码: ${result.data.code}`,
-							showCancel: false
-						})
-					}
-					
 					// 开始倒计时
 					this.startCountdown()
 				} catch (error) {
@@ -610,6 +595,10 @@
 			
 			// 处理注册
 			async handleRegister() {
+				if (this.selectedRole !== 'doctor') {
+					showToast('患者账号由健管师提供')
+					return
+				}
 				// 检查协议同意状态
 				if (!this.agreeToTerms) {
 					showToast('请先阅读并同意用户协议和隐私政策')
@@ -802,7 +791,7 @@
 			
 			// 去登录页面
 			goToLogin() {
-				uni.navigateBack()
+				uni.reLaunch({ url: '/pages/login/login' })
 			},
 			
 			// 查看用户协议
@@ -896,7 +885,7 @@
 		width: 100rpx;
 		height: 100rpx;
 		margin-bottom: 20rpx;
-		border-radius: 20rpx;
+		border-radius: 0;
 	}
 
 	.app-name {
@@ -1355,7 +1344,7 @@
 		font-weight: 500;
 	}
 
-	/* 数字减重助手：蓝白临床视觉 */
+	/* MedTalent健康数字助手：蓝白临床视觉 */
 	.register-container {
 		background: linear-gradient(180deg, #236f8e 0%, #4b9fba 24%, #eaf5f9 24%, #f7fbfd 100%);
 		overflow-x: hidden;
@@ -1461,4 +1450,17 @@
 		border-radius: 24rpx;
 		box-shadow: 0 24rpx 64rpx rgba(23, 59, 77, 0.22);
 	}
+</style>
+
+<style scoped>
+/* Keep actions usable after the shared font reset, including narrow screens. */
+.registration-closed { display: flex; flex-direction: column; gap: 16px; line-height: 1.7; }
+.registration-closed > button { width: 100%; min-height: 44px; margin: 0; padding: 10px 16px; display: flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1.5; border-radius: 10px; color: #fff; background: #1688b1; }
+</style>
+
+<style scoped>
+/* Interactive view touch targets: layout only. */
+.register-btn, .sms-btn { min-height: 44px; height: auto; display: flex; align-items: center; justify-content: center; line-height: 1.5; }
+.sms-btn { flex-shrink: 0; padding: 0 10px; }
+.password-toggle { min-height: 44px; min-width: 44px; display: flex; align-items: center; justify-content: center; }
 </style>

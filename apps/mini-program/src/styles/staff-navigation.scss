@@ -1,0 +1,73 @@
+/* Shared staff navigation: keep the full touch row above the device safe area. */
+.doctor-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(64px + env(safe-area-inset-bottom));
+  padding: 0 0 env(safe-area-inset-bottom);
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  background: #ffffff;
+  border-top: 1px solid #dcecf2;
+  box-shadow: 0 -4px 14px rgba(30, 95, 119, 0.08);
+  z-index: 1000;
+}
+.doctor-tabbar .tab-item {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 63px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.doctor-tabbar .tab-icon {
+  height: 22px;
+  line-height: 22px;
+  margin-bottom: 4px;
+}
+.doctor-tabbar .tab-text {
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  color: #687e8d;
+}
+.doctor-tabbar .tab-item.active .tab-text {
+  color: #167fa5;
+  font-weight: 600;
+}
+.doctor-tabbar .tab-item.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 22px;
+  height: 3px;
+  border-radius: 0 0 4px 4px;
+  background: #1688b1;
+}
+.staff-navigation-page {
+  padding-bottom: calc(80px + env(safe-area-inset-bottom));
+}
+.patients-container, .follow-container {
+  height: calc(100vh - var(--window-top, 0px));
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.patients-container > view, .follow-container > view {
+  flex-shrink: 0;
+}
+.patients-list, .follow-list {
+  flex: 1 1 0;
+  height: 0;
+  min-height: 0;
+}
+/* #ifdef H5 */
+@media screen and (min-width: 768px) {
+  .doctor-tabbar { max-width: 430px; margin: 0 auto; }
+}
+/* #endif */

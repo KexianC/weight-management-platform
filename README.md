@@ -1,54 +1,50 @@
-# 轻衡健康体重管理平台
+# MedTalent 健康数字助手（减重管理平台）
 
-该仓库把原 uniCloud 小程序重构为三端共用的体重管理系统：
+包含 NestJS API、React 医护管理后台，以及 uni-app 患者/医护 H5 和微信小程序。此仓库交付可构建源码与数据库迁移；数据库、上传的业务资料、生产密钥和本机测试账号由部署方单独管理。
 
-- `apps/mini-program`：正式患者端/医生端 uni-app（Vue 3 + Vite），保留原 20 个页面，可构建 H5 与微信小程序。
-- `apps/clinician-admin`：医生/营养师工作台与系统管理员后台（React + Vite）。
-- `apps/api`：独立 NestJS REST API（Prisma + MySQL），不依赖 uniCloud。
-- `apps/patient-mobile`：方案一视觉方向的 React 交互参考，不是正式小程序交付入口。
+## 部署
 
-## 本地启动 H5
+从 [部署指南](docs/DEPLOY.md) 开始。推荐使用 `docker-compose.deploy.yml`，在 Linux 服务器上构建 API、后台和 H5，并通过自己的 HTTPS 域名提供服务。需要 Docker Compose、外部 MySQL、私有 OSS 与短信服务配置。首次管理员通过部署方自行设置的环境变量初始化。
 
-只预览页面可直接运行：
-
-```powershell
-npm --prefix apps/mini-program install
-npm --prefix apps/mini-program run dev:h5
+```bash
+git clone https://github.com/KexianC/weight-management-platform.git
+cd weight-management-platform
+cp .env.example .env
+# 按 docs/DEPLOY.md 填写自己的域名、数据库和服务凭据
+docker compose -f docker-compose.deploy.yml build
+# 新数据库初始化前确认目标库；已有数据先备份并审核迁移
+docker compose -f docker-compose.deploy.yml run --rm api npx prisma migrate deploy
+docker compose -f docker-compose.deploy.yml up -d
 ```
 
-默认 API 地址为 `http://127.0.0.1:3000/api/v1`。完整联调需先启动 MySQL 和 API：
+配置未填写完整时，生产启动检查会拒绝启动。`docker-compose.yml` 与 `docker-compose.aliyun.yml` 是旧部署入口，第三方交付以 `docker-compose.deploy.yml` 和部署指南为准。仓库若为私有，下载者需要仓库访问权限。
 
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d mysql
-$env:DATABASE_URL='mysql://weightcare:change_me@127.0.0.1:3307/weightcare'
-$env:JWT_ACCESS_SECRET='local-only-secret-at-least-32-characters-long'
-npm --prefix apps/api run prisma:migrate
-npm --prefix apps/api run prisma:seed
-npm --prefix apps/api run start:dev
+## 目录
+
+| 目录 | 用途 |
+| --- | --- |
+| `apps/api` | NestJS、Prisma、认证、健康记录、随访、报告、营养和活动业务 |
+| `apps/clinician-admin` | 医护管理后台 |
+| `apps/mini-program` | 正式 uni-app H5 / 微信小程序 |
+| `apps/patient-mobile` | 早期患者端视觉参考，非当前正式入口 |
+| `deploy` | 容器构建与 Nginx 配置 |
+| `docs/DEPLOY.md` | 配置、迁移、首次管理员、HTTPS、小程序构建与回滚 |
+
+## 开发和验证
+
+使用 Node.js 22（建议 22.12 或更高）。各应用独立安装锁定依赖，不是根目录 workspace 安装：
+
+```bash
+npm --prefix apps/api ci
+npm --prefix apps/api run prisma:generate
+npm --prefix apps/clinician-admin ci
+npm --prefix apps/mini-program ci
+npm --prefix apps/api run build:release
+npm --prefix apps/clinician-admin run build
+npm --prefix apps/mini-program run build:h5
+npm --prefix apps/mini-program run build:mp-weixin
 ```
 
-另开终端启动两端：
+前端编译前必须设置自己的 `VITE_API_BASE_URL`、`VITE_STORAGE_BASE_URL`。Docker 部署入口已显式传入根目录 `.env` 的构建参数；直接运行 npm 时需自行设置环境变量或应用内 `.env.production.local`。
 
-```powershell
-npm --prefix apps/mini-program run dev:h5
-npm --prefix apps/clinician-admin run dev -- --port 4174
-```
-
-PC 后台默认打开管理员登录。本地开发首次启动 API 时会自动创建 `admin / admin123`，仅用于本机联调；管理员可查看平台概览、创建账号、调整角色与启停状态、重置密码并查询审计日志。生产环境不会创建默认管理员：只有同时提供 `DEFAULT_ADMIN_USERNAME` 与至少 16 位的非默认 `DEFAULT_ADMIN_PASSWORD` 才会引导创建，已存在的管理员密码不会在重启时被覆盖。正式后台域名为 `https://kxjz.hzmwmt.cn`。
-
-API 存活检查为 `GET /api/v1/health`，数据库就绪检查为 `GET /api/v1/health/ready`。本地种子账号及密码策略见 `apps/api/prisma/seed.ts`；生产环境默认拒绝写入演示账号。
-
-## 构建与测试
-
-```powershell
-npm run build
-npm run test
-```
-
-微信开发者工具导入 `apps/mini-program/dist/build/mp-weixin`。H5 产物位于 `apps/mini-program/dist/build/h5`。
-
-## 生产边界
-
-患者只能访问本人数据；医生和营养师只能访问存在 `ACTIVE` 照护关系的患者；管理员没有绕过临床数据关系校验的权限。邀请码预览为只读，只有患者确认后才原子建立关系。解绑后立即禁止继续发送消息，但历史记录保留用于审计。
-
-仓库包含阿里云部署配置和迁移工具，但“可部署”不等于已经上线。真实发布前仍需填写 RDS、短信、微信、OSS、域名与 TLS 配置，并完成真实 MySQL 迁移、数据对账、微信真机和备份恢复验收。详见 `docs/aliyun-deployment.md` 与 `docs/cloud-function-migration.md`。
+微信小程序需使用部署方自己的 AppID、合法域名、隐私政策和协议主体。上传开发版、真机验收、平台审核和正式发布由部署方完成；源码上传不代表这些步骤已通过。OCR、短信、微信和对象存储等外部能力应使用部署方账号配置并验收。

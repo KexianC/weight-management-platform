@@ -11,9 +11,9 @@
 			<view class="header-content">
 				<view class="brand-lockup">
 					<view class="brand-mark">
-						<image class="brand-logo" src="/static/logo.png" mode="aspectFit"></image>
+						<image class="brand-logo" src="/static/logo.png" alt="MedTalent健康数字助手" aria-label="MedTalent健康数字助手" mode="aspectFit"></image>
 					</view>
-					<text class="brand-name">数字减重助手</text>
+					<text class="brand-name">MedTalent健康数字助手</text>
 				</view>
 				<view class="bind-icon"><Icon name="Business/shake-hands-line.svg" size="40" color="$primary-color" /></view>
 				<text class="bind-title">医生/营养师绑定</text>
@@ -1113,7 +1113,7 @@
 		display: block;
 	}
 
-	/* 数字减重助手：蓝白临床视觉 */
+	/* MedTalent健康数字助手：蓝白临床视觉 */
 	.bind-container {
 		background: linear-gradient(180deg, #236f8e 0%, #4b9fba 650rpx, #eaf5f9 650rpx, #f7fbfd 100%);
 		overflow-x: hidden;
@@ -1256,4 +1256,10 @@
 	.doctor-avatar {
 		background: linear-gradient(135deg, #2e86ab 0%, #7fc6d7 100%);
 	}
+</style>
+
+<style scoped>
+/* Narrow-screen action spacing and reachable controls. */
+.scan-btn, .bind-btn { min-height: 44px; height: auto; display: flex; align-items: center; justify-content: center; padding: 10px 14px; line-height: 1.5; font-size: 14px; }
+.scan-help { min-height: 44px; display: flex; align-items: center; justify-content: center; margin-top: 8px; }
 </style>

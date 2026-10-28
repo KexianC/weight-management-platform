@@ -23,7 +23,7 @@
 				</view>
 				<view class="info-card">
 					<view class="info-row">
-						<text class="info-label">患者姓名：</text>
+						<text class="info-label">客户：</text>
 						<text class="info-value">{{ followRecord.patientName }}</text>
 					</view>
 					<view class="info-row">
@@ -42,7 +42,7 @@
 			</view>
 
 			<!-- 随访结果 -->
-			<view class="result-section">
+			<view v-if="followRecord.result" class="result-section">
 				<view class="section-title">
 					<view class="title-icon"><Icon name="Document/clipboard-line.svg" size="16" color="$primary-color" /></view>
 					<text class="title-text">随访结果</text>
@@ -52,7 +52,7 @@
 				<view v-if="followRecord.followType === 'weight_check'" class="result-card">
 					<view class="weight-result">
 						<view class="weight-display">
-							<text class="weight-number">{{ followRecord.result.weight }}</text>
+							<text class="weight-number">{{ followUpWeight(followRecord.result) ?? '--' }}</text>
 							<text class="weight-unit">kg</text>
 						</view>
 						<view v-if="followRecord.result.notes" class="weight-notes">
@@ -170,6 +170,8 @@ import Icon from '@/components/Icon.vue'
 import { getFollowUpDetail } from '../../api/follow.js'
 import { showToast } from '../../utils/common.js'
 import store from '../../store/index.js'
+import { isNutritionist, getManagedClient } from '../../utils/managed-care.js'
+import { followUpWeight } from '../../utils/follow-result.js'
 
 export default {
 	components: {
@@ -200,6 +202,7 @@ export default {
 		}
 	},
 	methods: {
+		followUpWeight,
 		// 加载随访记录
 		async loadFollowRecord() {
 			try {
@@ -207,11 +210,18 @@ export default {
 				
 				const result = await getFollowUpDetail(this.followId)
 				if (result.code === 200) {
+					if (isNutritionist()) {
+						const assigned = await getManagedClient(result.data.patientId)
+						result.data.patientName = assigned.patient.name
+						result.data.patientInfo = { name: assigned.patient.name }
+						if (result.data.result) result.data.result = { ...result.data.result, images: [] }
+					}
 					this.followRecord = result.data
 				} else {
 					showToast(result.message || '加载失败')
 				}
 			} catch (error) {
+				this.followRecord = null
 				console.error('加载随访记录失败:', error)
 				showToast('网络错误，请重试')
 			} finally {
@@ -802,4 +812,10 @@ export default {
 	background: linear-gradient(135deg, #1684ad, #1b9fc2);
 	box-shadow: 0 7rpx 18rpx rgba(22, 132, 173, 0.18);
 }
+</style>
+
+<style scoped>
+/* Final touch target audit: layout only. */
+.follow-record-container button { min-height: 44px; height: auto; display: flex; align-items: center; justify-content: center; padding: 10px 14px; line-height: 1.5; font-size: 14px; }
+.follow-record-container .action-section { gap: 12px; }
 </style>

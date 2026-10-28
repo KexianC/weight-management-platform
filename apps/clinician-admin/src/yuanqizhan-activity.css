@@ -1,0 +1,58 @@
+.yq-workspace { display: grid; gap: 20px; }
+.yq-workspace button { cursor: pointer; }
+.yq-workspace button:disabled { cursor: not-allowed; }
+.yq-privacy-note, .yq-success { display: flex; align-items: flex-start; gap: 11px; padding: 16px 18px; border: 1px solid #cfe3e9; border-radius: 12px; background: #edf8fb; font-size: 13px; }
+.yq-privacy-note > svg { flex: 0 0 18px; margin-top: 2px; color: var(--primary); }
+.yq-privacy-note p { display: grid; gap: 6px; margin: 0; line-height: 1.65; }
+.yq-privacy-note span, .yq-muted { color: #68818a; font-size: 12px; }
+.yq-success { border-color: #c5e5d7; background: #f0faf5; color: #24764f; }
+.yq-activity-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; padding: 18px 20px; }
+.yq-activity-card { display: grid; justify-items: start; gap: 8px; padding: 17px; border: 1px solid var(--line); border-radius: 11px; text-align: left; background: #fff; }
+.yq-activity-card.selected { border-color: var(--primary); background: #f1fafd; box-shadow: 0 0 0 1px var(--primary); }
+.yq-activity-card b { word-break: break-word; font-size: 15px; }
+.yq-activity-card small { color: #68818a; font-size: 12px; }
+.yq-status { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; vertical-align: middle; white-space: nowrap; }
+.yq-status.active { background: #e8f6f0; color: #267851; }
+.yq-status.ended, .yq-status.removed { background: #edf1f3; color: #61737c; }
+.yq-member-panel .page-toolbar h2 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.yq-description { white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px 20px 0; margin-bottom: 0; color: #4d6770; font-size: 13px; line-height: 1.7; }
+.yq-member-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 20px; }
+.yq-member-toolbar > button, .yq-search button, .yq-table button, .yq-pagination button, .yq-selection-bar button, .yq-inline-error button { min-height: 36px; padding: 8px 12px; border: 1px solid #d7e4e8; border-radius: 8px; background: white; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; }
+.yq-member-toolbar > button.primary, .yq-selection-bar button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.yq-search { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.yq-search label { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 11px; border: 1px solid #d7e4e8; border-radius: 8px; }
+.yq-search label svg { flex: 0 0 15px; color: #758b94; }
+.yq-search input { width: min(280px, 100%); border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 13px; }
+.yq-candidate-search { padding: 18px 20px; }
+.yq-table-scroll { overflow-x: auto; }
+.yq-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+.yq-table th { padding: 12px 20px; background: #f7fafb; font-size: 12px; color: #617b85; font-weight: 600; white-space: nowrap; }
+.yq-table td { padding: 14px 20px; border-top: 1px solid #e9eff2; line-height: 1.6; }
+.yq-table td > small { display: block; margin-top: 4px; }
+.yq-table input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--primary); }
+.yq-id { font-family: ui-monospace, Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
+.yq-checkbox { display: flex; align-items: center; gap: 7px; }
+.yq-pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 15px 20px; border-top: 1px solid #e9eff2; color: #68818a; font-size: 12px; }
+.yq-pagination > div { display: flex; gap: 8px; }
+.yq-empty, .yq-loading { padding: 22px 20px; text-align: center; color: #758b94; font-size: 13px; }
+.yq-loading { margin: 0; }
+.yq-inline-error { margin: 14px 20px; align-items: center; justify-content: space-between; }
+.yq-selection-bar { margin: 0 20px 16px; padding: 13px 15px; display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 1px solid #cde3eb; border-radius: 9px; background: #f1f9fc; }
+.yq-selection-bar > div { display: flex; gap: 10px; align-items: center; }
+.yq-selection-bar b { font-size: 13px; }
+.yq-selection-bar span { font-size: 12px; color: #68818a; }
+.yq-selected-details { margin: 0 20px 16px; padding: 8px 0; font-size: 12px; }
+.yq-selected-details summary { cursor: pointer; color: var(--primary-dark); }
+.yq-selected-details > div { display: flex; flex-wrap: wrap; gap: 8px; max-height: 220px; overflow-y: auto; padding-top: 10px; }
+.yq-selected-details span { display: inline-grid; grid-template-columns: 1fr 20px; gap: 3px 6px; align-items: center; padding: 8px; border: 1px solid #d7e4e8; border-radius: 7px; }
+.yq-selected-details span small { grid-row: 2; }
+.yq-selected-details button { grid-column: 2; grid-row: 1 / 3; padding: 2px; display: flex; border: 0; background: transparent; }
+.yq-rule-note { display: flex; gap: 10px; margin: 18px 0; padding: 14px; border-radius: 9px; background: #f1f8fb; font-size: 13px; }
+.yq-rule-note svg { flex: 0 0 16px; margin-top: 2px; }
+.yq-rule-note p { margin: 6px 0 0; color: #68818a; font-size: 12px; line-height: 1.7; }
+.yq-retention { padding: 12px 14px; border: 1px solid #e5d4b4; border-radius: 9px; background: #fffbf3; color: #81622c; font-size: 13px; line-height: 1.7; }
+.yq-ended-note { margin: 16px 20px 0; }
+.modal-actions .yq-danger { border-color: #d75f43; background: #d75f43; color: white; }
+.yq-no-access { padding: 24px; }
+@media (max-width: 1050px) { .yq-member-toolbar, .yq-selection-bar { align-items: stretch; flex-direction: column; } .yq-search label { flex: 1; } .yq-search input { width: 100%; } .yq-member-toolbar > button { align-self: flex-start; } }
+@media (max-width: 650px) { .yq-activity-list .page-toolbar, .yq-member-panel .page-toolbar, .yq-candidate-panel .page-toolbar { align-items: flex-start; flex-direction: column; } .yq-selection-bar > div { flex-wrap: wrap; } .yq-table { min-width: 610px; } .yq-pagination { align-items: flex-start; flex-direction: column; } }

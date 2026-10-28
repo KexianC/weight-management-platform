@@ -49,8 +49,11 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 import type { Request } from 'express';
+import { practitionerPhoneKey } from './domain';
 import { PrismaService } from './prisma.service';
 import { SmsDeliveryService } from './sms-delivery';
+import { WechatGateway } from './wechat-gateway';
+import { Transform } from 'class-transformer';
 
 const PHONE_PATTERN = /^(?:\+?86)?1[3-9]\d{9}$/;
 const SMS_CODE_PATTERN = /^\d{6}$/;
@@ -67,6 +70,8 @@ export type Actor = {
   role: UserRole;
   typ: typeof ACCESS_TOKEN_TYPE;
   jti: string;
+  // Missing versions are accepted only for legacy sessions while the account remains at v0.
+  sv?: number;
 };
 
 type SessionMetadata = {
@@ -172,7 +177,7 @@ export class LoginDto extends PhoneDto {
   @MaxLength(72)
   password!: string;
 
-  @IsIn([UserRole.PATIENT, UserRole.DOCTOR, UserRole.NUTRITIONIST])
+  @IsIn([UserRole.PATIENT, UserRole.DOCTOR, UserRole.NUTRITIONIST, UserRole.HEALTH_MANAGER, UserRole.EXERCISE_COACH])
   @IsOptional()
   role?: Exclude<UserRole, 'ADMIN'>;
 }
@@ -233,7 +238,7 @@ export class SmsLoginDto extends PhoneDto {
   @Matches(SMS_CODE_PATTERN)
   code!: string;
 
-  @IsIn([UserRole.PATIENT, UserRole.DOCTOR, UserRole.NUTRITIONIST])
+  @IsIn([UserRole.PATIENT, UserRole.DOCTOR, UserRole.NUTRITIONIST, UserRole.HEALTH_MANAGER, UserRole.EXERCISE_COACH])
   @IsOptional()
   role?: Exclude<UserRole, 'ADMIN'>;
 }
@@ -258,7 +263,7 @@ export class WechatLoginDto {
   @IsOptional()
   smsCode?: string;
 
-  @IsIn([UserRole.PATIENT, UserRole.DOCTOR, UserRole.NUTRITIONIST])
+  @IsIn([UserRole.PATIENT, UserRole.DOCTOR, UserRole.NUTRITIONIST, UserRole.HEALTH_MANAGER, UserRole.EXERCISE_COACH])
   @IsOptional()
   role?: Exclude<UserRole, 'ADMIN'>;
 
@@ -283,6 +288,15 @@ export class WechatLoginDto {
   practitionerInviteCode?: string;
 }
 
+export class WechatPhoneLoginDto {
+  @IsString() @Matches(/^[A-Za-z0-9_-]{8,256}$/) phoneCode!: string;
+  @IsOptional() @IsIn(['PATIENT']) role?: 'PATIENT';
+  // Preserve the raw JSON value: implicit Boolean conversion would turn 'false' into true.
+  @Transform(({ obj, key }) => obj[key])
+  @IsBoolean() @Equals(true) acceptedTerms!: boolean;
+  @IsOptional() @IsString() @MaxLength(32) consentVersion?: string;
+}
+
 export class ResetPasswordDto extends PhoneDto {
   @IsString()
   @IsNotEmpty()
@@ -297,7 +311,7 @@ export class ResetPasswordDto extends PhoneDto {
   @MaxLength(72)
   newPassword!: string;
 
-  @IsIn([UserRole.PATIENT, UserRole.DOCTOR, UserRole.NUTRITIONIST])
+  @IsIn([UserRole.PATIENT, UserRole.DOCTOR, UserRole.NUTRITIONIST, UserRole.HEALTH_MANAGER, UserRole.EXERCISE_COACH])
   @IsOptional()
   role?: Exclude<UserRole, 'ADMIN'>;
 }
@@ -438,6 +452,7 @@ export class ChangePasswordDto {
 
 @Injectable()
 export class AuthService {
+  private readonly wechatGateway = new WechatGateway();
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -445,10 +460,20 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto, req?: Request) {
+    if (!['DOCTOR', 'NUTRITIONIST'].includes(dto.role)) {
+      throw new ForbiddenException('客户账号由健康管理师建档后提供，工作人员账号由管理员创建');
+    }
     const phone = this.normalizePhone(dto.phone);
     const metadata = this.requestMetadata(req);
 
     if (dto.role === UserRole.DOCTOR || dto.role === UserRole.NUTRITIONIST) {
+      const existingPractitioner = await this.prisma.user.findUnique({
+        where: { practitionerPhone: phone },
+        select: { id: true },
+      });
+      if (existingPractitioner) {
+        throw new ConflictException('该手机号已注册医生或营养师账号，不能重复注册执业身份');
+      }
       this.assertPractitionerRegistrationCode(dto.practitionerInviteCode);
     }
 
@@ -471,6 +496,7 @@ export class AuthService {
         const created = await tx.user.create({
           data: {
             phone,
+            practitionerPhone: practitionerPhoneKey(dto.role, phone),
             passwordHash,
             displayName: dto.displayName.trim(),
             role: dto.role,
@@ -525,6 +551,9 @@ export class AuthService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
+        if (dto.role === UserRole.DOCTOR || dto.role === UserRole.NUTRITIONIST) {
+          throw new ConflictException('该手机号已注册医生或营养师账号，不能重复注册执业身份');
+        }
         throw new ConflictException('手机号、邮箱或执业证号已存在');
       }
       throw error;
@@ -535,14 +564,25 @@ export class AuthService {
 
   async login(dto: LoginDto, req?: Request) {
     const phone = this.normalizePhone(dto.phone);
-    const user = await this.findUserByPhoneAndRole(this.prisma, phone, dto.role);
-
+    let user: UserWithProfile | null;
+    try {
+      user = await this.findUserByPhoneAndRole(this.prisma, phone, dto.role);
+    } catch (error) {
+      if (error instanceof BadRequestException) throw this.invalidCredentials();
+      throw error;
+    }
     return this.completePasswordLogin(user, dto.password, req);
   }
 
   async practitionerLogin(dto: PractitionerLoginDto, req?: Request) {
     const phone = this.normalizePhone(dto.phone);
-    const user = await this.findPractitionerByPhone(this.prisma, phone);
+    let user: UserWithProfile | null;
+    try {
+      user = await this.findPractitionerByPhone(this.prisma, phone);
+    } catch (error) {
+      if (error instanceof BadRequestException) throw this.invalidCredentials();
+      throw error;
+    }
     return this.completePasswordLogin(user, dto.password, req);
   }
 
@@ -556,14 +596,27 @@ export class AuthService {
       !user ||
       user.status !== 'ACTIVE' ||
       !user.passwordHash ||
-      !(await this.verifyPassword(user.passwordHash, password))
+      !(await this.verifyPassword(user.passwordHash, password)) ||
+      this.initialCredentialExpired(user)
     ) {
-      throw new UnauthorizedException('手机号或密码错误');
+      throw this.invalidCredentials();
     }
 
     if (this.isLegacyPasswordHash(user.passwordHash)) {
-      user.passwordHash = await this.hashPassword(password);
-      await this.prisma.user.update({ where: { id: user.id }, data: { passwordHash: user.passwordHash } });
+      const previousHash = user.passwordHash;
+      const passwordHash = await this.hashPassword(password);
+      try {
+        await this.prisma.user.update({
+          where: { id: user.id, passwordHash: previousHash, sessionVersion: user.sessionVersion ?? 0, status: 'ACTIVE' },
+          data: { passwordHash },
+        });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+          throw this.invalidCredentials();
+        }
+        throw error;
+      }
+      user.passwordHash = passwordHash;
     }
 
     const metadata = this.requestMetadata(req);
@@ -582,9 +635,10 @@ export class AuthService {
       user.role !== UserRole.ADMIN ||
       user.status !== 'ACTIVE' ||
       !user.passwordHash ||
-      !(await this.verifyPassword(user.passwordHash, dto.password))
+      !(await this.verifyPassword(user.passwordHash, dto.password)) ||
+      this.initialCredentialExpired(user)
     ) {
-      throw new UnauthorizedException('管理员账号或密码错误');
+      throw this.invalidCredentials();
     }
     const metadata = this.requestMetadata(req);
     await this.recordSuccessfulLogin(user.id, metadata, 'ADMIN_PASSWORD_LOGIN');
@@ -657,23 +711,23 @@ export class AuthService {
   async smsLogin(dto: SmsLoginDto, req?: Request) {
     const phone = this.normalizePhone(dto.phone);
     const metadata = this.requestMetadata(req);
+    const resolved = await this.findUserByPhoneAndRole(this.prisma, phone, dto.role);
+    if (!resolved || resolved.status !== 'ACTIVE') {
+      throw new UnauthorizedException('验证码无效或账号不可用');
+    }
     await this.consumeChallenge(dto.challengeId, phone, SmsPurpose.LOGIN, dto.code);
     const user = await this.prisma.$transaction(async (tx) => {
-      const found = await this.findUserByPhoneAndRole(tx, phone, dto.role);
-      if (!found || found.status !== 'ACTIVE') {
-        throw new UnauthorizedException('验证码无效或账号不可用');
-      }
-      await tx.user.update({ where: { id: found.id }, data: { lastLoginAt: new Date() } });
+      await tx.user.update({ where: { id: resolved.id }, data: { lastLoginAt: new Date() } });
       await tx.auditLog.create({
         data: {
-          actorId: found.id,
+          actorId: resolved.id,
           action: 'AUTH_SMS_LOGIN',
           resourceType: 'USER',
-          resourceId: found.id,
+          resourceId: resolved.id,
           ipAddress: metadata.ipAddress,
         },
       });
-      return found;
+      return resolved;
     });
     return this.issueSession(user, metadata);
   }
@@ -681,155 +735,86 @@ export class AuthService {
   async practitionerSmsLogin(dto: PractitionerSmsLoginDto, req?: Request) {
     const phone = this.normalizePhone(dto.phone);
     const metadata = this.requestMetadata(req);
+    const resolved = await this.findPractitionerByPhone(this.prisma, phone);
+    if (!resolved || resolved.status !== 'ACTIVE') {
+      throw new UnauthorizedException('验证码无效或账号不可用');
+    }
     await this.consumeChallenge(dto.challengeId, phone, SmsPurpose.LOGIN, dto.code);
     const user = await this.prisma.$transaction(async (tx) => {
-      const found = await this.findPractitionerByPhone(tx, phone);
-      if (!found || found.status !== 'ACTIVE') {
-        throw new UnauthorizedException('验证码无效或账号不可用');
-      }
-      await tx.user.update({ where: { id: found.id }, data: { lastLoginAt: new Date() } });
+      await tx.user.update({ where: { id: resolved.id }, data: { lastLoginAt: new Date() } });
       await tx.auditLog.create({
         data: {
-          actorId: found.id,
+          actorId: resolved.id,
           action: 'AUTH_SMS_LOGIN',
           resourceType: 'USER',
-          resourceId: found.id,
+          resourceId: resolved.id,
           ipAddress: metadata.ipAddress,
         },
       });
-      return found;
+      return resolved;
     });
     return this.issueSession(user, metadata);
   }
 
-  async wechatLogin(dto: WechatLoginDto, req?: Request) {
-    const wechat = await this.exchangeWechatCode(dto.code);
+  private wechatPhoneAccountUnavailable() {
+    return new UnauthorizedException({ code: 'PHONE_ACCOUNT_UNAVAILABLE', message: '无法完成账号验证，请联系健康管理师核对已开通账号。' });
+  }
+  private async claimWechatPhoneCode(code: string, req?: Request) {
+    const appId = this.wechatGateway.appId();
+    if (!/^[A-Za-z0-9_-]{8,256}$/.test(code)) throw new UnauthorizedException({ code: 'WECHAT_CODE_INVALID', message: '手机号授权凭据无效或已过期，请重新授权。' });
+    const id = createHash('sha256').update(`${appId}:${code}`).digest('hex');
+    // Do not trust a client-supplied forwarded IP for the rate limit.
+    const requestKey = createHash('sha256').update(`${this.smsPepper()}:${req?.socket?.remoteAddress || 'unavailable'}`).digest('hex');
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const recent = await tx.wechatCodeUse.count({ where: { requestKey, createdAt: { gt: new Date(Date.now() - 60000) } } });
+        if (recent >= 20) throw new RateLimitException('授权请求过于频繁，请稍后再试。');
+        await tx.wechatCodeUse.create({ data: { id, kind: 'PHONE_LOGIN', requestKey, expiresAt: new Date(Date.now() + 24 * 3600000) } });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) throw new UnauthorizedException({ code: 'WECHAT_CODE_INVALID', message: '手机号授权凭据无效或已使用，请重新授权。' });
+      throw error;
+    }
+  }
+  async wechatPhoneLogin(dto: WechatPhoneLoginDto, req?: Request) {
+    if (dto.acceptedTerms !== true) throw new BadRequestException('请先阅读并同意用户协议和隐私政策。');
+    if (dto.role !== undefined && dto.role !== 'PATIENT') throw new BadRequestException('工作人员请使用密码登录。');
+    await this.claimWechatPhoneCode(dto.phoneCode, req);
+    // Phone comes only from the official server exchange. No wx.login/openid step.
+    const phone = this.normalizePhone(await this.wechatGateway.exchangePhoneCode(dto.phoneCode));
     const metadata = this.requestMetadata(req);
-    const existingIdentity = await this.prisma.authIdentity.findUnique({
-      where: {
-        provider_externalId: {
-          provider: 'WECHAT_MINI_PROGRAM',
-          externalId: wechat.openid,
-        },
-      },
-      include: {
-        user: { include: { patientProfile: true, practitionerProfile: true } },
-      },
-    });
-
-    if (existingIdentity) {
-      if (existingIdentity.user.status !== 'ACTIVE') {
-        throw new UnauthorizedException('账号不可用');
-      }
-      await this.recordSuccessfulLogin(
-        existingIdentity.user.id,
-        metadata,
-        'AUTH_WECHAT_LOGIN',
-      );
-      return this.issueSession(existingIdentity.user, metadata);
-    }
-
-    if (
-      !dto.phone ||
-      !dto.challengeId ||
-      !dto.smsCode ||
-      !dto.role ||
-      dto.acceptedTerms !== true
-    ) {
-      throw new BadRequestException(
-        '首次微信登录需提供手机号、短信验证码、角色并同意用户协议与隐私政策',
-      );
-    }
-
-    const phone = this.normalizePhone(dto.phone);
-    await this.consumeChallenge(
-      dto.challengeId,
-      phone,
-      SmsPurpose.VERIFY_PHONE,
-      dto.smsCode,
-    );
     let user: UserWithProfile;
     try {
       user = await this.prisma.$transaction(async (tx) => {
-        const byPhone = await tx.user.findUnique({
-          where: { phone_role: { phone, role: dto.role! } },
-          include: { patientProfile: true, practitionerProfile: true },
-        });
-        if (byPhone?.status === 'DISABLED') throw new UnauthorizedException('账号不可用');
-        if (!byPhone && (dto.role === UserRole.DOCTOR || dto.role === UserRole.NUTRITIONIST)) {
-          this.assertPractitionerRegistrationCode(dto.practitionerInviteCode);
-        }
-
-        const linked = byPhone
-          ? await tx.user.update({
-              where: { id: byPhone.id },
-              data: {
-                authIdentities: {
-                  create: {
-                    provider: 'WECHAT_MINI_PROGRAM',
-                    externalId: wechat.openid,
-                    unionId: wechat.unionid,
-                  },
-                },
-                lastLoginAt: new Date(),
-              },
-              include: { patientProfile: true, practitionerProfile: true },
-            })
-          : await tx.user.create({
-              data: {
-                phone,
-                passwordHash: null,
-                displayName: dto.displayName?.trim() || '微信用户',
-                role: dto.role!,
-                lastLoginAt: new Date(),
-                authIdentities: {
-                  create: {
-                    provider: 'WECHAT_MINI_PROGRAM',
-                    externalId: wechat.openid,
-                    unionId: wechat.unionid,
-                  },
-                },
-                patientProfile:
-                  dto.role === UserRole.PATIENT ? { create: {} } : undefined,
-                practitionerProfile:
-                  dto.role === UserRole.DOCTOR || dto.role === UserRole.NUTRITIONIST
-                    ? { create: {} }
-                    : undefined,
-                consents: {
-                  create: {
-                    version: dto.consentVersion?.trim() || '1.0',
-                    scope: 'TERMS_AND_PRIVACY',
-                  },
-                },
-              },
-              include: { patientProfile: true, practitionerProfile: true },
-            });
-        await tx.auditLog.create({
-          data: {
-            actorId: linked.id,
-            action: byPhone ? 'AUTH_WECHAT_LINK' : 'AUTH_WECHAT_REGISTER',
-            resourceType: 'USER',
-            resourceId: linked.id,
-            ipAddress: metadata.ipAddress,
-          },
-        });
-        return linked;
-      });
+        // Historical +86 forms remain unchanged. Ambiguous equivalent accounts
+        // are rejected rather than selecting one or merging customer archives.
+        const candidates = await tx.user.findMany({ where: { role: 'PATIENT', phone: { in: [phone, `86${phone}`, `+86${phone}`] } }, include: { patientProfile: true, practitionerProfile: true }, take: 2 });
+        const account = candidates.length === 1 ? candidates[0] : null;
+        if (!account || account.status !== 'ACTIVE' || account.disabledAt || this.initialCredentialExpired(account)) throw this.wechatPhoneAccountUnavailable();
+        const updated = await tx.user.update({ where: { id: account.id, status: 'ACTIVE', role: 'PATIENT', phone: account.phone }, data: { lastLoginAt: new Date() }, include: { patientProfile: true, practitionerProfile: true } });
+        const consent = await tx.consent.findFirst({ where: { userId: account.id, scope: 'TERMS_AND_PRIVACY', revokedAt: null } });
+        if (!consent) await tx.consent.create({ data: { userId: account.id, version: dto.consentVersion?.trim() || '1.0', scope: 'TERMS_AND_PRIVACY' } });
+        await tx.auditLog.create({ data: { actorId: account.id, action: 'AUTH_WECHAT_PHONE_LOGIN', resourceType: 'USER', resourceId: account.id, ipAddress: metadata.ipAddress } });
+        return updated;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException('微信账号或手机号已绑定');
-      }
+      if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2025', 'P2034'].includes(error.code)) throw this.wechatPhoneAccountUnavailable();
       throw error;
     }
+    // Existing first-password and sessionVersion restrictions still apply.
     return this.issueSession(user, metadata);
+  }
+  async wechatLogin(_dto: WechatLoginDto, _req?: Request): Promise<never> {
+    throw new BadRequestException({ code: 'WECHAT_PHONE_AUTH_REQUIRED', message: '请使用微信授权手机号登录；账号需由健康管理师开通。' });
   }
 
   async resetPassword(dto: ResetPasswordDto, req?: Request) {
     const phone = this.normalizePhone(dto.phone);
     const metadata = this.requestMetadata(req);
+    const resolved = await this.findUserByPhoneAndRole(this.prisma, phone, dto.role);
+    if (!resolved || resolved.status !== 'ACTIVE') {
+      throw new BadRequestException('验证码无效或账号不可用');
+    }
 
     await this.consumeChallenge(
       dto.challengeId,
@@ -837,24 +822,27 @@ export class AuthService {
       SmsPurpose.RESET_PASSWORD,
       dto.code,
     );
+    this.assertNewPassword(dto.newPassword, resolved.phone);
+    if (resolved.passwordHash && await this.verifyPassword(resolved.passwordHash, dto.newPassword)) {
+      throw new BadRequestException('新密码不能与当前密码相同');
+    }
     const passwordHash = await this.hashPassword(dto.newPassword);
 
     await this.prisma.$transaction(async (tx) => {
-      const user = await this.findUserByPhoneAndRole(tx, phone, dto.role);
-      if (!user || user.status !== 'ACTIVE') {
-        throw new BadRequestException('验证码无效或账号不可用');
-      }
-      await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
+      await tx.user.update({
+        where: { id: resolved.id },
+        data: { passwordHash, mustChangePassword: false, initialPasswordExpiresAt: null, sessionVersion: { increment: 1 } },
+      });
       await tx.refreshToken.updateMany({
-        where: { userId: user.id, revokedAt: null },
+        where: { userId: resolved.id, revokedAt: null },
         data: { revokedAt: new Date() },
       });
       await tx.auditLog.create({
         data: {
-          actorId: user.id,
+          actorId: resolved.id,
           action: 'AUTH_PASSWORD_RESET',
           resourceType: 'USER',
-          resourceId: user.id,
+          resourceId: resolved.id,
           ipAddress: metadata.ipAddress,
         },
       });
@@ -865,30 +853,37 @@ export class AuthService {
   async practitionerResetPassword(dto: PractitionerResetPasswordDto, req?: Request) {
     const phone = this.normalizePhone(dto.phone);
     const metadata = this.requestMetadata(req);
+    const resolved = await this.findPractitionerByPhone(this.prisma, phone);
+    if (!resolved || resolved.status !== 'ACTIVE') {
+      throw new BadRequestException('验证码无效或账号不可用');
+    }
     await this.consumeChallenge(
       dto.challengeId,
       phone,
       SmsPurpose.RESET_PASSWORD,
       dto.code,
     );
+    this.assertNewPassword(dto.newPassword, resolved.phone);
+    if (resolved.passwordHash && await this.verifyPassword(resolved.passwordHash, dto.newPassword)) {
+      throw new BadRequestException('新密码不能与当前密码相同');
+    }
     const passwordHash = await this.hashPassword(dto.newPassword);
 
     await this.prisma.$transaction(async (tx) => {
-      const user = await this.findPractitionerByPhone(tx, phone);
-      if (!user || user.status !== 'ACTIVE') {
-        throw new BadRequestException('验证码无效或账号不可用');
-      }
-      await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
+      await tx.user.update({
+        where: { id: resolved.id },
+        data: { passwordHash, mustChangePassword: false, initialPasswordExpiresAt: null, sessionVersion: { increment: 1 } },
+      });
       await tx.refreshToken.updateMany({
-        where: { userId: user.id, revokedAt: null },
+        where: { userId: resolved.id, revokedAt: null },
         data: { revokedAt: new Date() },
       });
       await tx.auditLog.create({
         data: {
-          actorId: user.id,
+          actorId: resolved.id,
           action: 'AUTH_PASSWORD_RESET',
           resourceType: 'USER',
-          resourceId: user.id,
+          resourceId: resolved.id,
           ipAddress: metadata.ipAddress,
         },
       });
@@ -908,6 +903,10 @@ export class AuthService {
     if (!stored || stored.expiresAt <= new Date() || stored.user.status !== 'ACTIVE') {
       throw new UnauthorizedException('刷新令牌无效或已过期');
     }
+    const tokenVersion = this.refreshTokenVersion(dto.refreshToken);
+    if (tokenVersion !== (stored.user.sessionVersion ?? 0)) {
+      throw new UnauthorizedException('刷新令牌无效或已过期');
+    }
     if (stored.revokedAt) {
       await this.prisma.refreshToken.updateMany({
         where: { familyId: stored.familyId, revokedAt: null },
@@ -916,8 +915,10 @@ export class AuthService {
       throw new UnauthorizedException('检测到刷新令牌重复使用，请重新登录');
     }
 
+    if (stored.user.mustChangePassword) throw this.passwordChangeRequired();
+
     const metadata = this.requestMetadata(req);
-    const nextRawToken = this.newRefreshToken();
+    const nextRawToken = this.newRefreshToken(stored.user.sessionVersion ?? 0);
     const nextTokenId = randomUUID();
     const nextExpiresAt = this.refreshExpiresAt();
     const now = new Date();
@@ -959,32 +960,24 @@ export class AuthService {
     };
   }
 
-  async logout(actor: Actor, dto: LogoutDto = {}) {
-    const now = new Date();
-    if (dto.refreshToken) {
-      await this.prisma.refreshToken.updateMany({
-        where: {
-          userId: actor.sub,
-          tokenHash: this.hashRefreshToken(dto.refreshToken),
-          revokedAt: null,
-        },
-        data: { revokedAt: now },
-      });
-    } else {
-      await this.prisma.refreshToken.updateMany({
+  async logout(actor: Actor, _dto: LogoutDto = {}) {
+    // Account-wide invalidation also makes the just-used access token unusable.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: actor.sub }, data: { sessionVersion: { increment: 1 } } });
+      await tx.refreshToken.updateMany({
         where: { userId: actor.sub, revokedAt: null },
-        data: { revokedAt: now },
+        data: { revokedAt: new Date() },
       });
-    }
-    await this.prisma.auditLog.create({
-      data: {
-        actorId: actor.sub,
-        action: 'AUTH_LOGOUT',
-        resourceType: 'USER',
-        resourceId: actor.sub,
-      },
+      await tx.auditLog.create({
+        data: {
+          actorId: actor.sub,
+          action: 'AUTH_LOGOUT',
+          resourceType: 'USER',
+          resourceId: actor.sub,
+        },
+      });
     });
-    return { loggedOut: true };
+    return { loggedOut: true, sessionsRevoked: true };
   }
 
   async actor(req: Request): Promise<Actor> {
@@ -1005,17 +998,24 @@ export class AuthService {
     if (
       payload.typ !== ACCESS_TOKEN_TYPE ||
       !payload.sub ||
-      !Object.values(UserRole).includes(payload.role)
+      !Object.values(UserRole).includes(payload.role) ||
+      (payload.sv !== undefined && (!Number.isSafeInteger(payload.sv) || payload.sv < 0))
     ) {
       throw new UnauthorizedException('访问令牌类型无效');
     }
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, role: true, status: true },
+      select: { id: true, role: true, status: true, mustChangePassword: true, sessionVersion: true },
     });
     if (!user || user.status !== 'ACTIVE' || user.role !== payload.role) {
       throw new UnauthorizedException('账号不可用');
+    }
+    if ((payload.sv ?? 0) !== (user.sessionVersion ?? 0)) {
+      throw new UnauthorizedException('会话已失效，请重新登录');
+    }
+    if (user.mustChangePassword && !this.isPasswordChangeRoute(req)) {
+      throw this.passwordChangeRequired();
     }
     return payload;
   }
@@ -1124,12 +1124,31 @@ export class AuthService {
 
   async changePassword(actor: Actor, dto: ChangePasswordDto) {
     const user = await this.prisma.user.findUnique({ where: { id: actor.sub } });
-    if (!user?.passwordHash || !(await this.verifyPassword(user.passwordHash, dto.currentPassword))) {
-      throw new UnauthorizedException('当前密码错误');
+    if (!user || user.status !== 'ACTIVE' || (actor.sv ?? 0) !== user.sessionVersion ||
+      !user.passwordHash || !(await this.verifyPassword(user.passwordHash, dto.currentPassword))) {
+      throw this.invalidCredentials();
+    }
+    if (this.initialCredentialExpired(user)) {
+      throw new UnauthorizedException({ code: 'INITIAL_PASSWORD_EXPIRED', message: '初始密码已失效，请联系健康管理师或通过短信重置' });
+    }
+    this.assertNewPassword(dto.newPassword, user.phone);
+    if (await this.verifyPassword(user.passwordHash, dto.newPassword)) {
+      throw new BadRequestException('新密码不能与当前密码相同');
     }
     const passwordHash = await this.hashPassword(dto.newPassword);
     await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({ where: { id: actor.sub }, data: { passwordHash } });
+      // Extended unique criteria prevent concurrent password changes using an old session.
+      try {
+        await tx.user.update({
+          where: { id: actor.sub, sessionVersion: user.sessionVersion, passwordHash: user.passwordHash, status: 'ACTIVE' },
+          data: { passwordHash, mustChangePassword: false, initialPasswordExpiresAt: null, sessionVersion: { increment: 1 } },
+        });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+          throw new UnauthorizedException('会话已失效，请重新登录');
+        }
+        throw error;
+      }
       await tx.refreshToken.updateMany({ where: { userId: actor.sub, revokedAt: null }, data: { revokedAt: new Date() } });
       await tx.auditLog.create({ data: { actorId: actor.sub, action: 'AUTH_PASSWORD_CHANGE', resourceType: 'USER', resourceId: actor.sub } });
     });
@@ -1137,7 +1156,7 @@ export class AuthService {
   }
 
   private async issueSession(user: UserWithProfile, metadata: SessionMetadata) {
-    const refreshToken = this.newRefreshToken();
+    const refreshToken = this.newRefreshToken(user.sessionVersion ?? 0);
     await this.prisma.refreshToken.create({
       data: {
         userId: user.id,
@@ -1155,12 +1174,13 @@ export class AuthService {
     };
   }
 
-  private async signAccessToken(user: Pick<UserWithProfile, 'id' | 'role'>) {
+  private async signAccessToken(user: Pick<UserWithProfile, 'id' | 'role' | 'sessionVersion'>) {
     const payload: Actor = {
       sub: user.id,
       role: user.role,
       typ: ACCESS_TOKEN_TYPE,
       jti: randomUUID(),
+      sv: user.sessionVersion ?? 0,
     };
     return this.jwt.signAsync(payload, {
       secret: this.accessSecret(),
@@ -1214,7 +1234,7 @@ export class AuthService {
     const matches = await users.findMany({
       where: {
         phone,
-        role: { in: [UserRole.PATIENT, UserRole.DOCTOR, UserRole.NUTRITIONIST] },
+        role: { in: [UserRole.PATIENT, UserRole.DOCTOR, UserRole.NUTRITIONIST, UserRole.HEALTH_MANAGER, UserRole.EXERCISE_COACH] },
       },
       include: { patientProfile: true, practitionerProfile: true },
       take: 2,
@@ -1319,6 +1339,8 @@ export class AuthService {
       role: user.role,
       status: user.status,
       lastLoginAt: user.lastLoginAt,
+      mustChangePassword: user.mustChangePassword ?? false,
+      initialPasswordExpiresAt: user.initialPasswordExpiresAt ?? null,
       patientProfile: user.patientProfile
         ? {
             gender: user.patientProfile.gender,
@@ -1400,8 +1422,50 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  private newRefreshToken() {
-    return randomBytes(48).toString('base64url');
+  private newRefreshToken(sessionVersion: number) {
+    return 'v' + sessionVersion + '.' + randomBytes(48).toString('base64url');
+  }
+
+  private refreshTokenVersion(token: string) {
+    const version = token.match(/^v(\d+)\./)?.[1];
+    if (version === undefined) return 0;
+    const numeric = Number(version);
+    if (!Number.isSafeInteger(numeric) || numeric < 0) {
+      throw new UnauthorizedException('刷新令牌无效或已过期');
+    }
+    return numeric;
+  }
+
+  private initialCredentialExpired(user: Pick<UserWithProfile, 'mustChangePassword' | 'initialPasswordExpiresAt'>) {
+    // Compatibility: historical expiry metadata cannot lock out an established account.
+    return user.mustChangePassword === true &&
+      (!user.initialPasswordExpiresAt || user.initialPasswordExpiresAt.getTime() <= Date.now());
+  }
+
+  private invalidCredentials() {
+    return new UnauthorizedException('账号或密码错误');
+  }
+
+  private passwordChangeRequired() {
+    return new ForbiddenException({ code: 'PASSWORD_CHANGE_REQUIRED', message: '首次登录请先修改密码' });
+  }
+
+  private isPasswordChangeRoute(req: Request) {
+    const path = (req.originalUrl || req.url || req.path || '').split('?')[0];
+    const method = req.method?.toUpperCase();
+    if (method === 'GET') return /^(?:\/api\/v1)?\/auth\/me\/?$/.test(path);
+    if (method === 'POST') return /^(?:\/api\/v1)?\/auth\/logout\/?$/.test(path);
+    if (method === 'PATCH') return /^(?:\/api\/v1)?\/auth\/(?:password|change-password)\/?$/.test(path);
+    return false;
+  }
+
+  private assertNewPassword(password: string, phone: string) {
+    if (password.length < 8 || password.length > 72) {
+      throw new BadRequestException('新密码长度须为8至72个字符');
+    }
+    if (this.normalizePhone(password.trim()) === this.normalizePhone(phone)) {
+      throw new BadRequestException('新密码不能与手机号相同');
+    }
   }
 
   private refreshExpiresAt() {
@@ -1561,6 +1625,9 @@ export class AuthController {
     return this.auth.smsLogin(dto, req);
   }
 
+  @Post('wechat/phone-login')
+  wechatPhoneLogin(@Body() dto: WechatPhoneLoginDto, @Req() req: Request) { return this.auth.wechatPhoneLogin(dto, req); }
+
   @Post('wechat/login')
   wechatLogin(@Body() dto: WechatLoginDto, @Req() req: Request) {
     return this.auth.wechatLogin(dto, req);
@@ -1619,6 +1686,11 @@ export class AuthController {
   @Patch('me/target-weight')
   async updateTargetWeight(@Body() dto: TargetWeightDto, @Req() req: Request) {
     return this.auth.updateTargetWeight(await this.auth.actor(req), dto);
+  }
+
+  @Patch('change-password')
+  async changePasswordAlias(@Body() dto: ChangePasswordDto, @Req() req: Request) {
+    return this.auth.changePassword(await this.auth.actor(req), dto);
   }
 
   @Patch('password')

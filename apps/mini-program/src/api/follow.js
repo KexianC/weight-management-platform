@@ -21,14 +21,12 @@ export async function completeFollowUp(followId, result, summary, options = {}) 
 			if (image && typeof image === 'object' && (image.assetId || image.id)) {
 				return { assetId: image.assetId || image.id }
 			}
-			if (typeof image === 'string' && /^https?:\/\//i.test(image)) return image
+			if (typeof image === 'string' && /^https?:\/\//i.test(image)) throw new Error('请重新选择随访照片，不能提交外部链接')
 			if (typeof image !== 'string' || !image) throw new Error('随访图片路径无效')
 			const uploaded = await uploadFollowImage(image, {
 				loading: false,
 				formData: {
-					scope: 'FOLLOW_UP',
-					referenceType: 'FOLLOW_UP',
-					referenceId: followId
+					scope: 'FOLLOW_UP'
 				}
 			})
 			const assetId = uploaded.data?.id || uploaded.data?.fileID

@@ -10,8 +10,10 @@ import {
 import { api, ApiError } from './api';
 import ArchiveView from './ArchiveView';
 import AdminConsole from './AdminConsole';
+import ManagedCare from './ManagedCare';
+import YuanqizhanActivity from './YuanqizhanActivity';
 import { archiveCompletion } from './archive-schema';
-import logoUrl from '../../mini-program/src/static/logo.png';
+import logoUrl from './assets/medtalent-logo.png';
 import {
   deriveClinicalSummary, displayMetric, followUpStatusLabel, formatDateTime, riskLabel,
 } from './model';
@@ -21,13 +23,13 @@ import type {
   PublishCareSummaryInput,
 } from './types';
 
-type ViewName = 'dashboard' | 'patients' | 'patient-detail' | 'patient-archive' | 'follow-ups' | 'messages' | 'notifications';
+type ViewName = 'yuanqizhan-activities' | 'managed-care' | 'dashboard' | 'patients' | 'patient-detail' | 'patient-archive' | 'follow-ups' | 'messages' | 'notifications';
 type AppData = {
   patients: Patient[]; patientTotal: number; followUps: FollowUp[]; summary: ClinicalSummary;
   conversations: Conversation[]; notifications: NotificationItem[];
 };
 const emptyData: AppData = { patients: [], patientTotal: 0, followUps: [], summary: {}, conversations: [], notifications: [] };
-const roleLabels: Record<Practitioner['role'], string> = { DOCTOR: '医生', NUTRITIONIST: '营养师', ADMIN: '管理员' };
+const roleLabels: Record<Practitioner['role'], string> = { DOCTOR: '医生', NUTRITIONIST: '营养师', HEALTH_MANAGER: '健管师', EXERCISE_COACH: '运动老师', ADMIN: '管理员' };
 const followUpTypes: Record<string, string> = {
   WEIGHT: '体重随访', DIET: '饮食随访', HEALTH: '健康问卷', EXERCISE: '运动随访',
   MEDICATION: '用药随访', GENERAL: '常规随访',
@@ -66,24 +68,25 @@ function LoginScreen({ onSuccess, notice }: { onSuccess: (session: AuthSession) 
       const account = String(data.get('account') ?? '');
       const session = mode === 'admin'
         ? await api.adminLogin(account, String(data.get('password') ?? ''))
-        : await api.login(account, String(data.get('password') ?? ''));
+        : await api.login(account, String(data.get('password') ?? ''), String(data.get('role')) as 'DOCTOR' | 'NUTRITIONIST' | 'HEALTH_MANAGER' | 'EXERCISE_COACH');
       localStorage.setItem('weightcare_access_token', session.accessToken);
       localStorage.setItem('weightcare_user', JSON.stringify(session.user));
-      if (session.refreshToken) localStorage.setItem('weightcare_refresh_token', session.refreshToken);
+      if (session.refreshToken) localStorage.setItem('weightcare_refresh_token', session.refreshToken); else localStorage.removeItem('weightcare_refresh_token');
       onSuccess(session);
     } catch (requestError) { setError(errorText(requestError)); }
     finally { setSubmitting(false); }
   }
   return <main className="login-page">
-    <section className="login-story"><div className="login-brand"><span><img src={logoUrl} alt="" /></span><b>数字减重助手</b></div><div>
-      <p className="eyebrow">临床体重管理平台</p><h1>把每一次随访，变成清晰可执行的照护。</h1>
+    <section className="login-story"><div className="login-brand"><span><img src={logoUrl} alt="MedTalent 健康数字助手" /></span><b>MedTalent 健康数字助手</b></div><div>
+      <p className="eyebrow">临床体重管理平台</p><h1>让每一次随访，都有清晰可执行的健康管理安排。</h1>
       <p className="login-copy">医生与营养师可在同一工作台查看患者真实记录、安排随访并保持连续沟通。</p>
     </div><div className="login-points"><span><CheckCircledIcon /> 患者授权关系隔离</span><span><CheckCircledIcon /> 全流程操作留痕</span><span><CheckCircledIcon /> 数据来自独立后端</span></div></section>
-    <section className="login-card-wrap"><form className="login-card" onSubmit={submit}><p className="eyebrow">欢迎回来</p><h2>{mode === 'admin' ? '登录系统管理后台' : '登录临床管理后台'}</h2><p>{mode === 'admin' ? '管理平台用户、账号状态与审计日志。' : '请使用医生或营养师账号。'}</p>
-      <div className="login-mode" role="tablist"><button type="button" className={mode === 'admin' ? 'active' : ''} onClick={() => { setMode('admin'); setError(''); }}>管理员</button><button type="button" className={mode === 'clinical' ? 'active' : ''} onClick={() => { setMode('clinical'); setError(''); }}>医生 / 营养师</button></div>
+    <section className="login-card-wrap"><form className="login-card" onSubmit={submit}><p className="eyebrow">欢迎回来</p><h2>{mode === 'admin' ? '登录系统管理后台' : '登录临床管理后台'}</h2><p>{mode === 'admin' ? '管理平台用户、账号状态与审计日志。' : '请使用健管师、营养师、医生或运动老师账号。'}</p>
+      <div className="login-mode" role="tablist"><button type="button" className={mode === 'admin' ? 'active' : ''} onClick={() => { setMode('admin'); setError(''); }}>管理员</button><button type="button" className={mode === 'clinical' ? 'active' : ''} onClick={() => { setMode('clinical'); setError(''); }}>工作人员</button></div>
       {notice && <div className="form-warning" role="status"><ExclamationTriangleIcon />{notice}</div>}
       {error && <div className="form-error" role="alert"><ExclamationTriangleIcon />{error}</div>}
       <label>{mode === 'admin' ? '管理员账号' : '手机号'}<input name="account" inputMode={mode === 'admin' ? 'text' : 'tel'} autoComplete="username" required defaultValue={mode === 'admin' ? 'admin' : ''} key={mode} placeholder={mode === 'admin' ? '请输入管理员账号' : '请输入手机号'} /></label>
+      {mode === 'clinical' && <label>工作岗位<select name="role" required defaultValue="NUTRITIONIST"><option value="NUTRITIONIST">营养师</option><option value="HEALTH_MANAGER">健管师</option><option value="DOCTOR">医生</option><option value="EXERCISE_COACH">运动老师</option></select></label>}
       <label>密码<input name="password" type="password" autoComplete="current-password" required placeholder="请输入密码" /></label>
       <button className="primary wide" disabled={submitting}>{submitting ? '正在登录…' : '安全登录'}</button>{mode === 'clinical' && <small>无法登录请联系机构管理员重置账号。</small>}
     </form></section>
@@ -141,7 +144,7 @@ function PatientsView({ patients, total, onOpen, onCreatePatient, onCreateFollow
     const matchesFilter = filter === 'ALL' || (filter === 'ACTIVE' && patient.status?.toUpperCase() === 'ACTIVE') || (filter === 'ATTENTION' && (patient.requiresAttention || patient.riskLevel?.toUpperCase() === 'HIGH')) || (filter === 'COMPLETED' && patient.status?.toUpperCase() === 'COMPLETED');
     return Boolean(matchesQuery && matchesFilter);
   }), [filter, patients, query]);
-  return <section className="panel page-panel"><div className="page-toolbar"><div><h2>患者管理</h2><p>共 {total} 位已授权患者</p></div><div className="page-toolbar-actions"><button onClick={() => onCreateFollowUp()}><CalendarIcon />创建随访</button><button className="primary" onClick={onCreatePatient}><PlusIcon />新增患者</button></div></div>
+  return <section className="panel page-panel"><div className="page-toolbar"><div><h2>患者管理</h2><p>共 {total} 位已授权患者</p></div><div className="page-toolbar-actions"><button onClick={() => onCreateFollowUp()}><CalendarIcon />创建随访</button><span className="care-muted">新客户由健管师统一建档</span></div></div>
     <div className="filter-row"><label className="search-field"><MagnifyingGlassIcon /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索姓名、手机号或患者 ID" /></label><div className="segmented">{[['ALL', '全部'], ['ACTIVE', '管理中'], ['ATTENTION', '重点关注'], ['COMPLETED', '已结案']].map(([value, label]) => <button key={value} className={filter === value ? 'on' : ''} onClick={() => setFilter(value)}>{label}</button>)}</div></div>
     <PatientTable patients={rows} onOpen={onOpen} />
   </section>;
@@ -255,7 +258,7 @@ function CreatePatientModal({ onClose, onCreated, onStartArchive }: { onClose: (
     {result ? <div className="create-patient-result" aria-live="polite"><span className="result-icon"><CheckCircledIcon /></span><h3>{resultTitle}</h3><p>{result.message ?? `${result.patient.displayName} 已加入您的患者列表。`}</p><dl><div><dt>患者</dt><dd>{result.patient.displayName}</dd></div><div><dt>登录手机号</dt><dd>{result.patient.phone ?? '以登记手机号为准'}</dd></div><div><dt>账号状态</dt><dd>{result.accountCreated ? '已自动注册' : '已有账号，无需重复注册'}</dd></div></dl>
       {result.temporaryPassword ? <div className="credential-notice"><b>临时登录密码</b><code>{result.temporaryPassword}</code><p>临时密码仅显示一次，请通过安全方式告知患者，并提醒首次登录后修改。</p></div> : <div className="credential-notice sms"><b>{result.accountCreated ? '下一步：通知患者登录' : '绑定已完成'}</b><p>{result.accountCreated || result.passwordSetupRequired ? '患者可使用该手机号通过短信验证码登录；如需密码登录，可在登录页“忘记密码”中设置密码。' : '该手机号对应账号可继续使用原登录方式，无需重新注册。'}</p></div>}
       <div className="modal-actions"><button type="button" onClick={onClose}>稍后处理</button><button className="primary" type="button" onClick={() => onStartArchive(result.patient)}><ClipboardIcon />现在去建档</button></div></div>
-      : <form onSubmit={submit}><p className="modal-intro">手机号将作为患者登录账号。若账号不存在，系统会自动注册；若已存在，则仅建立或恢复照护关系，不覆盖原有资料。</p>{error && <div className="form-error" role="alert"><ExclamationTriangleIcon />{error}</div>}<div className="form-grid">
+      : <form onSubmit={submit}><p className="modal-intro">手机号将作为患者登录账号。若账号不存在，系统会自动注册；若已存在，则仅建立或恢复服务关系，不覆盖原有资料。</p>{error && <div className="form-error" role="alert"><ExclamationTriangleIcon />{error}</div>}<div className="form-grid">
         <label>患者姓名<input ref={firstFieldRef} name="displayName" required maxLength={50} autoComplete="name" placeholder="请输入患者姓名" /></label>
         <label>手机号<input name="phone" required inputMode="tel" autoComplete="tel" maxLength={14} pattern="[+]?861[3-9][0-9]{9}|1[3-9][0-9]{9}" title="请输入 11 位中国大陆手机号，可带 +86" placeholder="请输入手机号" /></label>
         <label>性别<select name="gender" defaultValue=""><option value="">暂不填写</option><option value="MALE">男</option><option value="FEMALE">女</option><option value="OTHER">其他</option></select></label>
@@ -264,7 +267,7 @@ function CreatePatientModal({ onClose, onCreated, onStartArchive }: { onClose: (
         <label>当前体重（kg）<input name="initialWeightKg" type="number" min="25" max="350" step="0.1" inputMode="decimal" placeholder="例如 70.5" /></label>
         <label>目标体重（kg）<input name="targetWeightKg" type="number" min="25" max="350" step="0.1" inputMode="decimal" placeholder="例如 65" /></label>
         <fieldset className="archive-mode-picker full"><legend>电子建档</legend><p>患者账号和档案分开保存，检验结果暂缺也可以先保存草稿。</p><label className={archiveMode === 'LATER' ? 'selected' : ''}><input type="radio" name="archiveMode" value="LATER" checked={archiveMode === 'LATER'} onChange={() => setArchiveMode('LATER')} /><span><b>仅创建账号，稍后补录</b><small>创建后可从患者详情进入电子档案。</small></span></label><label className={archiveMode === 'NOW' ? 'selected' : ''}><input type="radio" name="archiveMode" value="NOW" checked={archiveMode === 'NOW'} onChange={() => setArchiveMode('NOW')} /><span><b>创建账号后立即建档</b><small>创建成功后直接进入独立建档页面。</small></span></label></fieldset>
-        <label className="authorization-check full"><input name="authorizationConfirmed" type="checkbox" required /><span><b>已核对手机号并取得患者授权</b><small>我确认患者同意创建账号，并与当前医生/营养师建立照护关系。</small></span></label>
+        <label className="authorization-check full"><input name="authorizationConfirmed" type="checkbox" required /><span><b>已核对手机号并取得患者授权</b><small>我确认患者同意创建账号，并与当前医生/营养师建立服务关系。</small></span></label>
       </div><div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary" disabled={submitting}>{submitting ? '正在新增并绑定…' : '确认新增患者'}</button></div></form>}
   </section></div>;
 }
@@ -313,7 +316,7 @@ function CareSummaryModal({ patient, onClose, onPublished }: { patient: Patient;
 }
 
 export default function App() {
-  const [user, setUser] = useState<Practitioner | null>(() => readStoredUser()); const [view, setView] = useState<ViewName>('dashboard'); const [data, setData] = useState<AppData>(emptyData);
+  const [user, setUser] = useState<Practitioner | null>(() => readStoredUser()); const [view, setView] = useState<ViewName>('managed-care'); const [data, setData] = useState<AppData>(emptyData);
   const [selectedPatientId, setSelectedPatientId] = useState(''); const [selectedPeerId, setSelectedPeerId] = useState(''); const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const [toast, setToast] = useState('');
   const [sessionNotice, setSessionNotice] = useState('');
   const [createPatientOpen, setCreatePatientOpen] = useState(false);
@@ -324,6 +327,7 @@ export default function App() {
   const unreadNotifications = data.notifications.filter((item) => !item.readAt).length; const unreadMessages = data.conversations.reduce((total, item) => total + item.unreadCount, 0);
   function showToast(message: string) { setToast(message); window.setTimeout(() => setToast(''), 3200); }
   function clearSession() { localStorage.removeItem('weightcare_access_token'); localStorage.removeItem('weightcare_refresh_token'); localStorage.removeItem('weightcare_user'); setUser(null); setData(emptyData); }
+  useEffect(() => { const expired = () => { clearSession(); setSessionNotice('登录状态已失效，请重新登录。'); }; window.addEventListener('medtalent:session-expired', expired); return () => window.removeEventListener('medtalent:session-expired', expired); }, []);
   async function logOut() {
     if (view === 'patient-archive' && archiveDirty && !window.confirm('电子档案有未保存修改，确定退出登录吗？')) return;
     setError('');
@@ -339,14 +343,17 @@ export default function App() {
     setData((current) => ({ patients: results[0].status === 'fulfilled' ? results[0].value.items : current.patients, patientTotal: results[0].status === 'fulfilled' ? results[0].value.total : current.patientTotal, followUps: results[1].status === 'fulfilled' ? results[1].value.items : current.followUps, summary: results[2].status === 'fulfilled' ? results[2].value : current.summary, conversations: results[3].status === 'fulfilled' ? results[3].value : current.conversations, notifications: results[4].status === 'fulfilled' ? results[4].value : current.notifications }));
     if (errors.length) setError(errors.map((result) => errorText(result.reason)).filter((value, index, all) => all.indexOf(value) === index).join('；')); setLoading(false);
   }
-  useEffect(() => { if (user && user.role !== 'ADMIN') void loadCore(); }, [user?.id]);
+  useEffect(() => { if (user && !user.mustChangePassword && ['DOCTOR', 'NUTRITIONIST'].includes(user.role) && view !== 'managed-care') void loadCore(); }, [user?.id, view === 'managed-care']);
   useEffect(() => { if (!selectedPatientId && data.patients[0]) setSelectedPatientId(data.patients[0].id); }, [data.patients, selectedPatientId]);
   if (!user || !localStorage.getItem('weightcare_access_token')) return <LoginScreen notice={sessionNotice} onSuccess={(session) => { setSessionNotice(''); setUser(session.user); }} />;
+  if (user.mustChangePassword) return <InitialPassword onLogout={logOut} onChanged={() => { clearSession(); setSessionNotice('密码已更新，请使用新密码重新登录。'); }} />;
   if (user.role === 'ADMIN') return <AdminConsole user={user} onLogout={logOut} />;
   const navItems: Array<{ view: ViewName; label: string; icon: React.ReactNode; badge?: number }> = [
-    { view: 'dashboard', label: '工作台', icon: <DashboardIcon /> }, { view: 'patients', label: '患者管理', icon: <PersonIcon /> }, { view: 'follow-ups', label: '随访管理', icon: <ReaderIcon /> }, { view: 'messages', label: '消息中心', icon: <ChatBubbleIcon />, badge: unreadMessages }, { view: 'notifications', label: '通知中心', icon: <BellIcon />, badge: unreadNotifications },
+    { view: 'managed-care', label: '服务工作台', icon: <DashboardIcon /> },
+    { view: 'yuanqizhan-activities', label: '元气盏活动', icon: <CalendarIcon /> },
+    { view: 'dashboard', label: '临床工作台', icon: <DashboardIcon /> }, { view: 'patients', label: '患者管理', icon: <PersonIcon /> }, { view: 'follow-ups', label: '随访管理', icon: <ReaderIcon /> }, { view: 'messages', label: '消息中心', icon: <ChatBubbleIcon />, badge: unreadMessages }, { view: 'notifications', label: '通知中心', icon: <BellIcon />, badge: unreadNotifications },
   ];
-  const titles: Record<ViewName, { title: string; detail: string }> = { dashboard: { title: `你好，${user.displayName}`, detail: '查看患者最新记录与今天的照护安排。' }, patients: { title: '患者管理', detail: '查看已建立授权关系的患者档案。' }, 'patient-detail': { title: '患者档案', detail: '临床数据、随访与任务记录。' }, 'patient-archive': { title: '电子建档', detail: '录入中医体重管理档案，支持草稿与后续补录。' }, 'follow-ups': { title: '随访管理', detail: '安排、执行并追踪患者随访。' }, messages: { title: '消息中心', detail: '与已授权患者保持连续沟通。' }, notifications: { title: '通知中心', detail: '处理患者动态与系统提醒。' } };
+  const titles: Record<ViewName, { title: string; detail: string }> = { 'yuanqizhan-activities': { title: '元气盏活动', detail: '配置活动与参与人员，每人从加入当天开始。' }, 'managed-care': { title: '服务工作台', detail: '客户建档、营养管理与运动处方协作。' }, dashboard: { title: `你好，${user.displayName}`, detail: '查看患者最新记录与今天的服务安排。' }, patients: { title: '患者管理', detail: '查看已建立授权关系的患者档案。' }, 'patient-detail': { title: '患者档案', detail: '临床数据、随访与任务记录。' }, 'patient-archive': { title: '电子建档', detail: '录入中医体重管理档案，支持草稿与后续补录。' }, 'follow-ups': { title: '随访管理', detail: '安排、执行并追踪患者随访。' }, messages: { title: '消息中心', detail: '与已授权患者保持连续沟通。' }, notifications: { title: '通知中心', detail: '处理患者动态与系统提醒。' } };
   function navigate(next: ViewName) {
     if (view === 'patient-archive' && next !== 'patient-archive' && archiveDirty && !window.confirm('电子档案有未保存修改，确定离开吗？')) return;
     setView(next); setError('');
@@ -354,9 +361,11 @@ export default function App() {
   function openPatient(patient: Patient) { setSelectedPatientId(patient.id); navigate('patient-detail'); }
   function openArchive(patient: Patient) { setSelectedPatientId(patient.id); setArchivePatient(patient); navigate('patient-archive'); }
   function openMessage(patient: Patient) { const conversation = data.conversations.find((item) => item.peerId === patient.id); if (!conversation) { navigate('messages'); setError('该患者尚无可用会话，请先由后端创建或返回患者会话。'); return; } setSelectedPeerId(patient.id); navigate('messages'); }
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-mark"><img src={logoUrl} alt="" /></span><div><b>数字减重助手</b><small>临床管理平台</small></div></div><nav>{navItems.map((item) => <button key={item.view} aria-label={item.label} title={item.label} className={(view === item.view || (['patient-detail', 'patient-archive'].includes(view) && item.view === 'patients')) ? 'active' : ''} onClick={() => navigate(item.view)}>{item.icon}<span>{item.label}</span>{Boolean(item.badge) && <em>{item.badge}</em>}</button>)}</nav><div className="sidebar-foot"><i>{initials(user.displayName)}</i><div><b>{user.displayName}</b><small>{roleLabels[user.role]}{user.department ? ` · ${user.department}` : ''}</small></div><button onClick={() => void logOut()} title="退出登录"><ExitIcon /></button></div></aside>
-    <main className="main-content"><header className="topbar"><div><h1>{titles[view].title}</h1><p>{titles[view].detail}</p></div><div className="top-actions"><span className="role-chip">{roleLabels[user.role]}</span><button className="icon-button" onClick={() => navigate('notifications')} title="通知"><BellIcon />{unreadNotifications > 0 && <i>{unreadNotifications}</i>}</button><button className="icon-button" disabled={loading} onClick={() => void loadCore()} title="刷新数据"><ReloadIcon className={loading ? 'spin' : ''} /></button></div></header>
+  return <div className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-mark"><img src={logoUrl} alt="MedTalent 健康数字助手" /></span><div><b>MedTalent 健康数字助手</b><small>临床管理平台</small></div></div><nav>{navItems.filter(item => item.view === 'yuanqizhan-activities' ? user.role === 'HEALTH_MANAGER' : ['DOCTOR', 'NUTRITIONIST'].includes(user.role) || item.view === 'managed-care').map((item) => <button key={item.view} aria-label={item.label} title={item.label} className={(view === item.view || (['patient-detail', 'patient-archive'].includes(view) && item.view === 'patients')) ? 'active' : ''} onClick={() => navigate(item.view)}>{item.icon}<span>{item.label}</span>{Boolean(item.badge) && <em>{item.badge}</em>}</button>)}</nav><div className="sidebar-foot"><i>{initials(user.displayName)}</i><div><b>{user.displayName}</b><small>{roleLabels[user.role]}{user.department ? ` · ${user.department}` : ''}</small></div><button onClick={() => void logOut()} title="退出登录"><ExitIcon /></button></div></aside>
+    <main className="main-content"><header className="topbar"><div><h1>{titles[view].title}</h1><p>{titles[view].detail}</p></div><div className="top-actions"><span className="role-chip">{roleLabels[user.role]}</span><button className="quiet" onClick={() => void logOut()}>退出</button>{view !== 'managed-care' && view !== 'yuanqizhan-activities' && <><button className="icon-button" onClick={() => navigate('notifications')} title="通知"><BellIcon />{unreadNotifications > 0 && <i>{unreadNotifications}</i>}</button><button className="icon-button" disabled={loading} onClick={() => void loadCore()} title="刷新数据"><ReloadIcon className={loading ? 'spin' : ''} /></button></>}</div></header>
       {toast && <div className="toast"><CheckCircledIcon />{toast}</div>}{error && <ErrorBanner message={error} onRetry={() => void loadCore()} />}{loading && !data.patients.length ? <LoadingPanel /> : <>
+        {view === 'managed-care' && <ManagedCare user={user} />}
+        {view === 'yuanqizhan-activities' && user.role === 'HEALTH_MANAGER' && <YuanqizhanActivity user={user} />}
         {view === 'dashboard' && <DashboardView data={data} selectedPatient={selectedPatient} onSelectPatient={(patient) => setSelectedPatientId(patient.id)} onOpenPatient={openPatient} onCreateFollowUp={(patient) => setFollowUpModal({ open: true, patient })} onMessage={openMessage} onOpenFollowUps={() => navigate('follow-ups')} />}
         {view === 'patients' && <PatientsView patients={data.patients} total={data.patientTotal} onOpen={openPatient} onCreatePatient={() => setCreatePatientOpen(true)} onCreateFollowUp={(patient) => setFollowUpModal({ open: true, patient })} />}
         {view === 'patient-detail' && selectedPatientId && <PatientDetailView patientId={selectedPatientId} practitionerId={user.id} onBack={() => navigate('patients')} onCreateFollowUp={(patient) => setFollowUpModal({ open: true, patient })} onMessage={openMessage} onOpenArchive={openArchive} onTaskCreated={() => showToast('任务已成功下发')} />}
@@ -368,3 +377,10 @@ export default function App() {
     </main>{createPatientOpen && <CreatePatientModal onClose={() => setCreatePatientOpen(false)} onStartArchive={(patient) => { setCreatePatientOpen(false); openArchive(patient); }} onCreated={async (created, startArchive) => { setSelectedPatientId(created.patient.id); setArchivePatient(created.patient); await loadCore(); showToast(created.accountCreated ? '患者账号已创建并完成绑定' : '患者已完成绑定'); if (startArchive) setView('patient-archive'); }} />}{followUpModal.open && <FollowUpModal patients={data.patients} initialPatient={followUpModal.patient} onClose={() => setFollowUpModal({ open: false })} onCreated={(created) => { setData((current) => ({ ...current, followUps: [created, ...current.followUps] })); setFollowUpModal({ open: false }); showToast('随访计划已创建'); }} />}
   </div>;
 }
+
+function InitialPassword({onChanged,onLogout}:{onChanged:()=>void;onLogout:()=>Promise<void>}) {
+  const [busy,setBusy]=useState(false);const [error,setError]=useState('');
+  async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);const next=String(f.get('newPassword'));if(next!==String(f.get('confirmPassword'))){setError('两次新密码不一致');return;}setBusy(true);setError('');try{await api.request('/auth/change-password',{method:'PATCH',body:{currentPassword:String(f.get('currentPassword')),newPassword:next}});onChanged();}catch(e){setError(errorText(e));}finally{setBusy(false);}}
+  return <main className="login-page"><section className="login-card-wrap"><form className="login-card" onSubmit={submit}><h1>设置新的登录密码</h1><p>初始密码仅用于首次登录，请设置新密码后继续使用。</p>{error && <div className="form-error" role="alert">{error}</div>}<label>初始密码<input name="currentPassword" type="password" required minLength={8} maxLength={72} autoComplete="current-password"/></label><label>新密码<input name="newPassword" type="password" required minLength={8} maxLength={72} autoComplete="new-password"/></label><label>再次输入新密码<input name="confirmPassword" type="password" required minLength={8} maxLength={72} autoComplete="new-password"/></label><button className="primary" disabled={busy}>{busy?'保存中…':'保存新密码'}</button><button type="button" disabled={busy} onClick={()=>void onLogout()}>退出登录</button></form></section></main>;
+}
+

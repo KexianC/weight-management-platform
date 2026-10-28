@@ -23,7 +23,7 @@ assert(report.includes('getHealthReports'), 'patient report must use the backend
 assert(report.includes("snack: {"), 'patient report must render snack records');
 assert(!report.includes('targetCalories: 1800'), 'patient report must not contain a fabricated calorie target');
 assert(!report.includes('height: 170'), 'patient report must not contain a fabricated height fallback');
-assert(record.includes('height: null // 仅使用用户资料中的真实身高'), 'patient record entry must not contain a fabricated height fallback');
+assert(record.includes('height: null,'), 'patient record entry must not contain a fabricated height fallback');
 assert(!report.includes('currentWeight - 5'), 'patient report must not fabricate a target weight');
 assert(!report.includes("createTime.split(' ')"), 'record dates must be parsed safely');
 
@@ -34,13 +34,15 @@ assert(api.includes("joinUrl('/auth/refresh')"), 'expired access tokens must be 
 assert(api.includes('_authRetried'), 'refreshed requests must be retried at most once');
 assert(store.includes("removeStorageSync('refreshToken')"), 'logout must clear the refresh token');
 
-assert(doctorHome.includes('getInviteQrUrl'), 'invite QR images must come from the owned API');
+const inviteLoader=read('utils/invite-qr.js');
+assert(doctorHome.includes('loadInviteQr') && inviteLoader.includes('getInviteQrUrl(code)') && inviteLoader.includes("headers:{Authorization:'Bearer '+token}") && inviteLoader.includes("redirect:'error'"), 'invite QR images must use the authenticated owned API loader without redirects');
 assert(!doctorHome.includes('api.pwmqr.com') && !doctorHome.includes('api.cl2wm.cn'), 'invite data must not be sent to third-party QR services');
 assert(!doctorHome.includes('绑定码永久有效'), 'invite expiry copy must match the backend expiry');
 assert(!doctorHome.includes('+5.2% 提升'), 'dashboard must not display a fabricated improvement');
 
-assert(!login.includes('open-type="getPhoneNumber"'), 'existing WeChat login must not require phone permission');
-assert(!login.includes('onGetPhoneNumber'), 'WeChat login must use the backend first-login verification flow');
+assert(login.includes('open-type="getPhoneNumber"'), 'patient WeChat login must use native phone authorization');
+assert(login.includes('handleWechatPhoneLogin') && !login.includes('handleWechatLogin'), 'single-step phone login must replace openid binding');
+assert(api.includes('/auth/wechat/phone-login') && !api.includes('/auth/wechat/bind-phone'), 'client must use the single-step server verification contract');
 assert(patientFollow.includes("ongoing: '进行中'"), 'patient follow-up status must recognize ongoing');
 
 console.log('Business logic contract passed (P0/P1 regression guards active).');

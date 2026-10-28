@@ -1,5 +1,5 @@
 <template>
-	<view class="follow-container">
+	<view class="follow-container patient-theme">
 		<!-- 头部统计区域 -->
 		<view class="stats-section">
 			<view class="stat-card">
@@ -75,7 +75,7 @@
 			>
 				<view class="follow-header">
 					<view class="follow-info">
-						<Icon :name="getFollowIcon(follow.followType)" size="20" color="$primary-color" />
+						<Icon :name="getFollowIcon(follow.followType)" size="20" color="$patient-primary" />
 						<view class="follow-details">
 							<text class="follow-title">{{ getFollowTitle(follow.followType) }}</text>
 							<text class="follow-desc">{{ follow.note || '请按时完成随访任务' }}</text>
@@ -154,7 +154,7 @@
 					<!-- 体重检查 -->
 					<view v-if="selectedFollow && selectedFollow.followType === 'weight_check'" class="follow-form">
 						<view class="form-title">
-						<Icon name="Business/bar-chart-line.svg" size="16" color="$primary-color" />
+						<Icon name="Business/bar-chart-line.svg" size="16" color="$patient-primary" />
 						体重记录
 					</view>
 						<view class="form-group">
@@ -184,7 +184,7 @@
 					<!-- 饮食指导 -->
 					<view v-else-if="selectedFollow && selectedFollow.followType === 'diet_guidance'" class="follow-form">
 						<view class="form-title">
-						<Icon name="Food/bowl-line.svg" size="16" color="$primary-color" />
+						<Icon name="Food/bowl-line.svg" size="16" color="$patient-primary" />
 						饮食记录
 					</view>
 						<view class="form-group">
@@ -210,7 +210,7 @@
 									</view>
 								</view>
 								<view class="upload-add" @click="chooseImage" v-if="followData.images.length < 3">
-									<Icon name="System/add-line.svg" size="20" color="$primary-color" />
+									<Icon name="System/add-line.svg" size="20" color="$patient-primary" />
 									<text class="add-text">添加照片</text>
 								</view>
 							</view>
@@ -220,7 +220,7 @@
 					<!-- 健康评估 -->
 					<view v-else-if="selectedFollow && selectedFollow.followType === 'health_assessment'" class="follow-form">
 						<view class="form-title">
-						<Icon name="Buildings/hospital-line.svg" size="16" color="$primary-color" />
+						<Icon name="Buildings/hospital-line.svg" size="16" color="$patient-primary" />
 						健康评估问卷
 					</view>
 						<template v-if="healthQuestions && healthQuestions.length > 0">
@@ -261,7 +261,7 @@
 					<!-- 运动计划 -->
 					<view v-else-if="selectedFollow && selectedFollow.followType === 'exercise_plan'" class="follow-form">
 						<view class="form-title">
-						<Icon name="Others/basketball-line.svg" size="16" color="$primary-color" />
+						<Icon name="Others/basketball-line.svg" size="16" color="$patient-primary" />
 						运动记录
 					</view>
 						<view class="form-group">
@@ -287,7 +287,7 @@
 					<!-- 用药复查 -->
 					<view v-else-if="selectedFollow && selectedFollow.followType === 'medication_review'" class="follow-form">
 						<view class="form-title">
-						<Icon name="Health/capsule-line.svg" size="16" color="$primary-color" />
+						<Icon name="Health/capsule-line.svg" size="16" color="$patient-primary" />
 						用药情况
 					</view>
 						<view class="form-group">
@@ -313,7 +313,7 @@
 					<!-- 其他类型 -->
 					<view v-else class="follow-form">
 						<view class="form-title">
-						<Icon name="Document/file-text-line.svg" size="16" color="$primary-color" />
+						<Icon name="Document/file-text-line.svg" size="16" color="$patient-primary" />
 						随访记录
 					</view>
 						<view class="form-group">
@@ -357,6 +357,9 @@ export default {
 			pageSize: 20,
 			follows: [],
 			pageLoaded: false,
+			listLoading: false,
+			listRequest: 0,
+			hasMore: true,
 			refresherTriggered: false,
 			// 随访数据
 			followData: {
@@ -455,7 +458,7 @@ export default {
 			return
 		}
 		
-		this.loadFollows()
+		// The initial onShow performs the sole first-page request.
 		this.pageLoaded = true
 		
 		// 检查是否有从通知跳转的followId
@@ -471,6 +474,7 @@ export default {
 		this.checkFollowIdFromStorage()
 	},
 
+	onUnload() { this.listRequest++; this.follows = []; this.showModal = false },
 	methods: {
 		// 设置随访筛选
 		setFollowFilter(filter) {
@@ -478,57 +482,36 @@ export default {
 		},
 		
 		// 加载随访列表
-		async loadFollows(refresh = false) {
-			if (refresh) {
-				this.currentPage = 1
-				this.follows = []
-			}
-			
+		async loadFollows(refresh = false, requestedPage = this.currentPage) {
+			if (this.listLoading || (!refresh && !this.hasMore)) return
+			const userInfo = store.getUserInfo()
+			const patientId = userInfo?.userId || userInfo?.id
+			if (!patientId) { this.follows = []; showToast('请重新登录'); return }
+			const page = refresh ? 1 : requestedPage
+			const request = ++this.listRequest
+			this.listLoading = true
+			this.loading = true
 			try {
-				this.loading = true
-				
-				const userInfo = store.getUserInfo()
-				if (!userInfo || !userInfo.userId) {
-					showToast('用户信息获取失败')
-					return
-				}
-				
-				const params = {
-					patientId: userInfo.userId,
-					page: this.currentPage,
-					limit: this.pageSize
-				}
-				
-				const result = await getFollowUpList(params)
-			console.log('loadFollows API返回结果:', result);
-			if (result.code === 200) {
-				console.log('随访列表数据:', result.data.followUps);
-				if (result.data.followUps && result.data.followUps.length > 0) {
-					console.log('第一条随访记录:', result.data.followUps[0]);
-					console.log('第一条记录的followId:', result.data.followUps[0].followId, 'type:', typeof result.data.followUps[0].followId);
-				}
-				if (refresh) {
-					this.follows = result.data.followUps || []
-				} else {
-					this.follows = this.follows.concat(result.data.followUps || [])
-				}
-			} else {
-				showToast(result.message || '获取随访列表失败')
-			}
+				const result = await getFollowUpList({ patientId, page, limit: this.pageSize })
+				const currentUser = store.getUserInfo()
+				if (request !== this.listRequest || patientId !== (currentUser?.userId || currentUser?.id)) return
+				if (result.code !== 200) throw new Error(result.message || '获取随访列表失败')
+				const rows = result.data.followUps || []
+				const merged = refresh ? rows : this.follows.concat(rows)
+				const unique = new Map()
+				for (const row of merged) { const id = row.followId || row.id; if (id) unique.set(id, row) }
+				this.follows = [...unique.values()]
+				this.currentPage = page
+				const total = Number(result.data.total)
+				this.hasMore = typeof result.data.hasMore === 'boolean' ? result.data.hasMore : Number.isFinite(total) ? page * this.pageSize < total : rows.length >= this.pageSize
 			} catch (error) {
-				console.error('加载随访列表失败:', error)
-				showToast('网络错误，请重试')
+				if (request === this.listRequest) showToast(error.message || '网络错误，请重试')
 			} finally {
-				this.loading = false
+				if (request === this.listRequest) { this.listLoading = false; this.loading = false }
 			}
 		},
-		
-		// 加载更多
 		loadMore() {
-			if (!this.loading) {
-				this.currentPage++
-				this.loadFollows()
-			}
+			if (!this.loading && !this.listLoading && this.hasMore) this.loadFollows(false, this.currentPage + 1)
 		},
 		
 		// 下拉刷新
@@ -1754,4 +1737,30 @@ export default {
 	background: #f4f8f9;
 	color: #657b87;
 }
+</style>
+
+<style scoped lang="scss">
+@import "../../styles/patient-theme.scss";
+.follow-container { padding: 28rpx 28rpx calc(120rpx + env(safe-area-inset-bottom)); background: #f4f7fb; }
+.follow-container .stats-section { border: 1px solid #e3e8f2; border-radius: 16rpx; background: white; box-shadow: none; }
+.follow-container .stat-number { color: #2b5fff; }.follow-container .stat-label { color: #63718e; font-size: 23rpx; }.follow-container .filter-section { box-shadow: none; border-color: #e3e8f2; border-radius: 14rpx; }
+.follow-container .filter-item { min-height: 44px; }.follow-container .filter-item.active { background: #2b5fff; }.follow-container .filter-item.active .filter-text { color: white; }.follow-container .filter-text { font-size: 26rpx; }
+.follow-container .follow-item { box-shadow: none; border-color: #e3e8f2; border-radius: 16rpx; }.follow-container .follow-title { color: #12234c; }.follow-container .follow-desc { color: #63718e; font-size: 24rpx; overflow-wrap: anywhere; }
+.follow-container .follow-details { min-width: 0; }.follow-container .follow-meta { flex-wrap: wrap; }.follow-container .follow-list { height: calc(100vh - 390rpx); }
+.follow-container .btn-start, .follow-container .btn-view, .follow-container .submit-btn { background: #2b5fff; box-shadow: none; }.follow-container .btn-message { background: #edf2ff; color: #2458db; border-color: #cfdbfd; }.follow-container .btn-start.overdue { background: #b84b46; }
+.follow-container .empty-state { background: white; border-color: #e3e8f2; border-radius: 16rpx; }
+
+</style>
+
+<style scoped>
+.follow-container { display: flex; flex-direction: column; height: calc(100vh - var(--window-top, 0px) - var(--window-bottom, 0px)); min-height: 0; padding-bottom: 0; overflow: hidden; }
+.follow-container .stats-section, .follow-container .filter-section { flex: none; }
+.follow-container .follow-list { height: 0; min-height: 0; flex: 1; padding-bottom: 24rpx; }
+</style>
+
+<style scoped>
+/* Populated-state layout audit: no account or data changes. */
+.follow-modal .modal-close { min-width: 44px; min-height: 44px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.follow-modal .option-item { min-height: 44px; box-sizing: border-box; }
+.follow-modal .modal-header, .follow-modal .modal-footer { flex-shrink: 0; }
 </style>

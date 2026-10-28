@@ -40,3 +40,30 @@ __pycache__/
 Thumbs.db
 .idea/
 .vscode/
+
+# Isolated synthetic runtime and credentials
+.local-rebuild/
+.local-test-accounts.json
+
+.local-test-accounts-extra.json
+
+apps/api/dist-release/
+.local-test-new-staff-review.json
+
+# Local QA evidence, exports, and machine-specific operations
+.playwright-cli/
+output/
+outputs/
+artifacts/
+.npm-cache/
+.typecheck-tools/
+.github-publish/
+.local-test-*.json
+*.pem
+*.key
+tests/reconstruction/*
+!tests/reconstruction/yuanqizhan-activity-20261014/
+tests/reconstruction/yuanqizhan-activity-20261014/*
+!tests/reconstruction/yuanqizhan-activity-20261014/fixture-design.json
+!tests/reconstruction/yuanqizhan-activity-20261014/source-contract.json
+scripts/operations/

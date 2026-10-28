@@ -8,7 +8,7 @@
 				</view>
 				<view class="navbar-center">
 					<view class="navbar-title-row">
-						<image class="navbar-logo" src="/static/logo.png" mode="aspectFit"></image>
+						<image class="navbar-logo" src="/static/logo.png" alt="MedTalent健康数字助手" aria-label="MedTalent健康数字助手" mode="aspectFit"></image>
 						<text class="navbar-title">{{ conversationTitle }}</text>
 					</view>
 					<text class="navbar-subtitle" v-if="subtitle">{{ subtitle }}</text>
@@ -795,4 +795,16 @@ export default {
 .send-text {
 	font-size: 26rpx;
 }
+</style>
+
+<style scoped>
+/* Narrow-screen action spacing and reachable controls. */
+.messages-container .send-btn { min-width: 64px; min-height: 44px; height: auto; padding: 10px; flex-shrink: 0; }
+.messages-container .message-input { min-width: 0; min-height: 44px; }
+.messages-container .input-container { gap: 10px; }
+</style>
+
+<style scoped>
+/* Interactive view touch targets: layout only. */
+.navbar-left { min-width: 44px; min-height: 44px; flex-shrink: 0; }
 </style>

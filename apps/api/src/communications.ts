@@ -17,6 +17,7 @@ import { Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import type { Request } from 'express';
 import type { Prisma } from '@prisma/client';
+import type { Actor } from './auth';
 import { ClinicalService } from './clinical';
 import { PrismaService } from './prisma.service';
 
@@ -74,6 +75,33 @@ class CreateNotificationDto {
 export class CommunicationsService {
   constructor(private readonly prisma: PrismaService, private readonly clinical: ClinicalService) {}
 
+  private messageAccounts(actor: Actor): Prisma.MessageWhereInput {
+    return actor.role === 'HEALTH_MANAGER' ? { sender: { status: 'ACTIVE' }, receiver: { status: 'ACTIVE' } } : {};
+  }
+
+  private async assertVisiblePeer(actor: Actor, peerId: string) {
+    if (actor.role !== 'HEALTH_MANAGER') return;
+    const peer = await this.prisma.user.findUnique({ where: { id: peerId }, select: { status: true } });
+    if (!peer || peer.status !== 'ACTIVE') throw new NotFoundException('用户不存在');
+  }
+
+  // Historic message notifications carry the sender's name and message body.
+  // Keep the same visibility as their source message, including counts and reads.
+  private async notificationAccounts(actor: Actor): Promise<Prisma.NotificationWhereInput> {
+    if (actor.role !== 'HEALTH_MANAGER') return {};
+    const messages = await this.prisma.message.findMany({
+      where: { OR: [
+        { senderId: actor.sub, receiver: { status: { not: 'ACTIVE' } } },
+        { receiverId: actor.sub, sender: { status: { not: 'ACTIVE' } } },
+      ] },
+      select: { id: true },
+    });
+    return messages.length ? { AND: [{ OR: [
+      { relatedType: null }, { relatedType: { not: 'MESSAGE' } },
+      { relatedId: null }, { relatedId: { notIn: messages.map((message) => message.id) } },
+    ] }] } : {};
+  }
+
   async send(req: Request, dto: SendMessageDto) {
     const actor = await this.clinical.actor(req);
     if (!dto.receiverId) throw new BadRequestException('请选择消息接收人');
@@ -101,7 +129,7 @@ export class CommunicationsService {
         data: {
           userId: receiverId,
           type: 'MESSAGE',
-          title: `${sender?.displayName ?? '照护联系人'}发来新消息`,
+          title: `${sender?.displayName ?? '服务联系人'}发来新消息`,
           content: notificationContent,
           relatedType: 'MESSAGE',
           relatedId: message.id,
@@ -119,17 +147,19 @@ export class CommunicationsService {
     const actor = await this.clinical.actor(req);
     const peerId = routePeerId ?? query.peerId ?? query.receiverId;
     if (!peerId) return this.conversations(req);
+    await this.assertVisiblePeer(actor, peerId);
     const relation = await this.prisma.careRelation.findFirst({
       where: actor.role === 'PATIENT' ? { patientId: actor.sub, practitionerId: peerId } : { patientId: peerId, practitionerId: actor.sub },
     });
-    if (!relation) throw new ForbiddenException('没有与该用户的照护关系');
+    if (!relation) throw new ForbiddenException('没有与该用户的服务关系');
     const visibility = {
+      ...this.messageAccounts(actor),
+      // A care relationship has one continuous conversation. Context fields are
+      // retained as message metadata, but must not partition what either side sees.
       OR: [
         { senderId: actor.sub, receiverId: peerId, deletedBySenderAt: null },
         { senderId: peerId, receiverId: actor.sub, deletedByReceiverAt: null },
       ],
-      ...(query.relatedId ? { contextId: query.relatedId } : {}),
-      ...(query.relatedType ? { contextType: query.relatedType } : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.message.findMany({
@@ -147,6 +177,7 @@ export class CommunicationsService {
     const actor = await this.clinical.actor(req);
     const messages = await this.prisma.message.findMany({
       where: {
+        ...this.messageAccounts(actor),
         OR: [
           { senderId: actor.sub, deletedBySenderAt: null },
           { receiverId: actor.sub, deletedByReceiverAt: null },
@@ -162,13 +193,13 @@ export class CommunicationsService {
       if (!current) peers.set(peerId, { latest: message, unreadCount: 0 });
       if (message.receiverId === actor.sub && !message.readAt) peers.get(peerId)!.unreadCount += 1;
     }
-    const users = await this.prisma.user.findMany({ where: { id: { in: [...peers.keys()] } }, select: { id: true, displayName: true, avatarUrl: true, role: true } });
+    const users = await this.prisma.user.findMany({ where: { id: { in: [...peers.keys()] }, ...(actor.role === 'HEALTH_MANAGER' ? { status: 'ACTIVE' as const } : {}) }, select: { id: true, displayName: true, avatarUrl: true, role: true } });
     const relations = await this.prisma.careRelation.findMany({
       where: actor.role === 'PATIENT' ? { patientId: actor.sub, practitionerId: { in: [...peers.keys()] } } : { practitionerId: actor.sub, patientId: { in: [...peers.keys()] } },
     });
     const relationByPeer = new Map(relations.map((relation) => [actor.role === 'PATIENT' ? relation.practitionerId : relation.patientId, relation]));
     const userById = new Map(users.map((user) => [user.id, user]));
-    return [...peers.entries()].map(([peerId, data]) => ({
+    return [...peers.entries()].filter(([peerId]) => actor.role !== 'HEALTH_MANAGER' || userById.has(peerId)).map(([peerId, data]) => ({
       id: peerId,
       peerId,
       peer: userById.get(peerId),
@@ -182,8 +213,10 @@ export class CommunicationsService {
     const actor = await this.clinical.actor(req);
     const ids = singleId ? [singleId] : dto.messageIds;
     const peerId = dto.peerId ?? dto.senderId ?? dto.otherUserId;
+    if (!ids?.length && !peerId) throw new BadRequestException('请指定要标记已读的消息或对话');
+    if (peerId) await this.assertVisiblePeer(actor, peerId);
     const result = await this.prisma.message.updateMany({
-      where: { receiverId: actor.sub, readAt: null, ...(ids?.length ? { id: { in: ids } } : {}), ...(peerId ? { senderId: peerId } : {}) },
+      where: { receiverId: actor.sub, readAt: null, ...this.messageAccounts(actor), ...(ids?.length ? { id: { in: ids } } : {}), ...(peerId ? { senderId: peerId } : {}) },
       data: { readAt: new Date() },
     });
     return { updated: result.count };
@@ -191,7 +224,7 @@ export class CommunicationsService {
 
   async removeMessage(req: Request, id: string) {
     const actor = await this.clinical.actor(req);
-    const message = await this.prisma.message.findUnique({ where: { id } });
+    const message = await this.prisma.message.findUnique({ where: { ...this.messageAccounts(actor), id } });
     if (!message || ![message.senderId, message.receiverId].includes(actor.sub)) throw new NotFoundException('消息不存在');
     await this.prisma.message.update({
       where: { id },
@@ -203,7 +236,7 @@ export class CommunicationsService {
   async message(req: Request, id: string) {
     const actor = await this.clinical.actor(req);
     const message = await this.prisma.message.findUnique({
-      where: { id },
+      where: { ...this.messageAccounts(actor), id },
       include: {
         sender: { select: { id: true, displayName: true, avatarUrl: true, role: true } },
         receiver: { select: { id: true, displayName: true, avatarUrl: true, role: true } },
@@ -218,14 +251,16 @@ export class CommunicationsService {
 
   async unreadMessages(req: Request) {
     const actor = await this.clinical.actor(req);
-    return { count: await this.prisma.message.count({ where: { receiverId: actor.sub, readAt: null, deletedByReceiverAt: null } }) };
+    return { count: await this.prisma.message.count({ where: { receiverId: actor.sub, readAt: null, deletedByReceiverAt: null, ...this.messageAccounts(actor) } }) };
   }
 
   async activities(req: Request) {
     const actor = await this.clinical.actor(req);
+    const notificationAccounts = await this.notificationAccounts(actor);
     const [messages, notifications] = await Promise.all([
       this.prisma.message.findMany({
         where: {
+          ...this.messageAccounts(actor),
           OR: [
             { senderId: actor.sub, deletedBySenderAt: null },
             { receiverId: actor.sub, deletedByReceiverAt: null },
@@ -235,7 +270,7 @@ export class CommunicationsService {
         take: 20,
       }),
       this.prisma.notification.findMany({
-        where: { userId: actor.sub, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        where: { userId: actor.sub, ...notificationAccounts, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
         orderBy: { createdAt: 'desc' },
         take: 20,
       }),
@@ -248,6 +283,7 @@ export class CommunicationsService {
     const actor = await this.clinical.actor(req);
     const where = {
       userId: actor.sub,
+      ...await this.notificationAccounts(actor),
       OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       ...(query.type ? { type: query.type } : {}),
       ...(query.unread === 'true' ? { readAt: null } : {}),
@@ -261,6 +297,9 @@ export class CommunicationsService {
 
   async createNotification(req: Request, dto: CreateNotificationDto) {
     const actor = await this.clinical.actor(req);
+    if (['EXERCISE_REPORT_READY', 'EXERCISE_REPORT_SHARED'].includes(dto.relatedType?.toUpperCase() ?? '')) {
+      throw new ForbiddenException('运动报告通知只能通过处方提交或报告分享生成');
+    }
     const userId = dto.userId ?? actor.sub;
     if (userId !== actor.sub) {
       this.clinical.assertPractitioner(actor);
@@ -273,25 +312,25 @@ export class CommunicationsService {
 
   async readNotification(req: Request, id: string) {
     const actor = await this.clinical.actor(req);
-    const result = await this.prisma.notification.updateMany({ where: { id, userId: actor.sub }, data: { readAt: new Date() } });
+    const result = await this.prisma.notification.updateMany({ where: { id, userId: actor.sub, ...await this.notificationAccounts(actor) }, data: { readAt: new Date() } });
     if (!result.count) throw new NotFoundException('通知不存在');
     return { read: true, id };
   }
 
   async readAllNotifications(req: Request) {
     const actor = await this.clinical.actor(req);
-    const result = await this.prisma.notification.updateMany({ where: { userId: actor.sub, readAt: null }, data: { readAt: new Date() } });
+    const result = await this.prisma.notification.updateMany({ where: { userId: actor.sub, readAt: null, ...await this.notificationAccounts(actor) }, data: { readAt: new Date() } });
     return { updated: result.count };
   }
 
   async unreadNotifications(req: Request) {
     const actor = await this.clinical.actor(req);
-    return { count: await this.prisma.notification.count({ where: { userId: actor.sub, readAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } }) };
+    return { count: await this.prisma.notification.count({ where: { userId: actor.sub, readAt: null, ...await this.notificationAccounts(actor), OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } }) };
   }
 
   async removeNotification(req: Request, id: string) {
     const actor = await this.clinical.actor(req);
-    const result = await this.prisma.notification.deleteMany({ where: { id, userId: actor.sub } });
+    const result = await this.prisma.notification.deleteMany({ where: { id, userId: actor.sub, ...await this.notificationAccounts(actor) } });
     if (!result.count) throw new NotFoundException('通知不存在');
     return { deleted: true, id };
   }

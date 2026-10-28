@@ -1,0 +1,242 @@
+{
+  "status": "DESIGN_ONLY_NOT_EXECUTED",
+  "productionAccessAllowed": false,
+  "usesRealPeople": false,
+  "activities": [
+    {
+      "key": "ACT_A",
+      "members": [
+        "P_A",
+        "P_MULTI",
+        "P_REMOVED",
+        "P_LEGACY"
+      ],
+      "durationDays": 15
+    },
+    {
+      "key": "ACT_B",
+      "members": [
+        "P_B",
+        "P_MULTI"
+      ],
+      "durationDays": 15
+    }
+  ],
+  "patients": [
+    {
+      "key": "P_A",
+      "description": "A only, active, managed synthetic patient"
+    },
+    {
+      "key": "P_B",
+      "description": "B only, active"
+    },
+    {
+      "key": "P_MULTI",
+      "description": "A and B, different joined dates"
+    },
+    {
+      "key": "P_NOT_MEMBER",
+      "description": "Neither activity"
+    },
+    {
+      "key": "P_REMOVED",
+      "description": "A historical submission then soft removal"
+    },
+    {
+      "key": "P_LEGACY",
+      "description": "ACTIVE PATIENT without CareEnrollment"
+    },
+    {
+      "key": "P_DISABLED",
+      "description": "Disabled synthetic user"
+    }
+  ],
+  "staff": [
+    "HM_ASSIGNED",
+    "HM_OTHER",
+    "DOCTOR_ASSIGNED",
+    "DOCTOR_OTHER",
+    "NUTRITION_ASSIGNED",
+    "NUTRITION_OTHER",
+    "COACH_ASSIGNED",
+    "COACH_OTHER",
+    "ADMIN"
+  ],
+  "pagination": {
+    "minimumSyntheticPatients": 101,
+    "includeEqualCreatedAt": true,
+    "noReuseOfSharedFixtures": true
+  },
+  "photos": {
+    "slots": [
+      "tongue_coating",
+      "tongue_underside",
+      "face",
+      "body_front",
+      "body_side",
+      "body_back"
+    ],
+    "content": "Six distinct generated test patterns marked SYNTHETIC ONLY; no real person image",
+    "expectedStoredDigest": "Compute from bytes actually uploaded after any declared client compression",
+    "network": "Loopback private storage only",
+    "perSlot": 1,
+    "maxBytes": 10485760,
+    "retention": "Long-term; do not physically delete historical originals"
+  },
+  "dateOracle": {
+    "timezone": "Asia/Shanghai",
+    "definition": "Shanghai calendar date difference + 1 from original joinedAt; reject before join, future/backfill writes and writes on Day16 onward; removed/ended cannot write, patient history remains read-only; rejoin never resets start.",
+    "cases": [
+      {
+        "id": "T01",
+        "joinedAt": "2026-10-14T01:30:00.000Z",
+        "now": "2026-10-14T01:29:59.999Z",
+        "expectedDay": null,
+        "expectedForm": null,
+        "reason": "BEFORE_EFFECTIVE_JOIN",
+        "writeAllowedByPersonalDay": false
+      },
+      {
+        "id": "T02",
+        "joinedAt": "2026-10-14T01:30:00.000Z",
+        "now": "2026-10-14T01:30:00.000Z",
+        "expectedDay": 1,
+        "expectedForm": "milestone",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T03",
+        "joinedAt": "2026-10-14T01:30:00.000Z",
+        "now": "2026-10-14T15:59:59.999Z",
+        "expectedDay": 1,
+        "expectedForm": "milestone",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T04",
+        "joinedAt": "2026-10-14T15:59:59.900Z",
+        "now": "2026-10-14T16:00:00.000Z",
+        "expectedDay": 2,
+        "expectedForm": "daily",
+        "note": "Only 100ms elapsed, but Shanghai calendar day changed.",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T05",
+        "joinedAt": "2026-10-14T01:30:00.000Z",
+        "now": "2026-10-20T15:59:59.999Z",
+        "expectedDay": 7,
+        "expectedForm": "daily",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T06",
+        "joinedAt": "2026-10-14T01:30:00.000Z",
+        "now": "2026-10-20T16:00:00.000Z",
+        "expectedDay": 8,
+        "expectedForm": "milestone",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T07",
+        "joinedAt": "2026-10-14T01:30:00.000Z",
+        "now": "2026-10-27T15:59:59.999Z",
+        "expectedDay": 14,
+        "expectedForm": "daily",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T08",
+        "joinedAt": "2026-10-14T01:30:00.000Z",
+        "now": "2026-10-27T16:00:00.000Z",
+        "expectedDay": 15,
+        "expectedForm": "milestone",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T09",
+        "joinedAt": "2026-10-14T01:30:00.000Z",
+        "now": "2026-10-28T15:59:59.999Z",
+        "expectedDay": 15,
+        "expectedForm": "milestone",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T10",
+        "joinedAt": "2026-10-14T01:30:00.000Z",
+        "now": "2026-10-28T16:00:00.000Z",
+        "expectedDay": 16,
+        "eligibility": "ENDED",
+        "note": "Confirmed durationDays=15: Day16 writes rejected; history remains read-only.",
+        "writeAllowedByPersonalDay": false,
+        "expectedForm": null
+      },
+      {
+        "id": "T11",
+        "joinedAt": "2026-10-20T23:00:00.000Z",
+        "now": "2026-10-21T02:00:00.000Z",
+        "expectedDay": 1,
+        "expectedForm": "milestone",
+        "note": "A later member in the same activity has their own Day1.",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T12",
+        "joinedAt": "2026-01-31T14:00:00.000Z",
+        "now": "2026-02-06T16:00:00.000Z",
+        "expectedDay": 8,
+        "expectedForm": "milestone",
+        "note": "Month boundary.",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T13",
+        "joinedAt": "2026-12-31T12:00:00.000Z",
+        "now": "2027-01-06T16:00:00.000Z",
+        "expectedDay": 8,
+        "expectedForm": "milestone",
+        "note": "Year boundary.",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T14",
+        "joinedAt": "2028-02-28T10:00:00.000Z",
+        "now": "2028-02-29T16:00:00.000Z",
+        "expectedDay": 3,
+        "expectedForm": "daily",
+        "note": "Leap day.",
+        "writeAllowedByPersonalDay": true
+      },
+      {
+        "id": "T15",
+        "joinedAt": "2026-10-14T09:30:00.000+08:00",
+        "now": "2026-10-21T00:00:00.000+08:00",
+        "expectedDay": 8,
+        "expectedForm": "milestone",
+        "equivalentTo": "T06",
+        "writeAllowedByPersonalDay": true
+      }
+    ]
+  },
+  "credentials": "Create later only inside an approved new synthetic environment; no passwords or tokens in this plan.",
+  "prohibit": [
+    "production writes",
+    "production accounts",
+    "real patient test data",
+    "questionnaire vendor submissions",
+    "paid OCR",
+    "shared fixture reset",
+    "global clock changes",
+    "browser security bypass"
+  ],
+  "evidenceModes": [
+    "STATIC_REVIEW",
+    "SYNTHETIC_HTTP",
+    "SYNTHETIC_H5",
+    "WECHAT_SIMULATOR",
+    "WECHAT_DEVICE"
+  ],
+  "nativeStatus": "NOT_RUN_NATIVE",
+  "productDefaultsFile": "product-defaults.json"
+}

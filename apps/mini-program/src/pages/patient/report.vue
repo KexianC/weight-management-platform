@@ -1,5 +1,5 @@
 <template>
-	<view class="container">
+	<view class="container patient-theme patient-reports">
 		<!-- 加载状态 -->
 		<view v-if="loading" class="loading-container">
 			<view class="loading-content">
@@ -8,44 +8,26 @@
 			</view>
 		</view>
 
-		<!-- 报告选项卡 -->
 		<view class="report-tabs">
-			<view 
-				class="tab-item" 
-				:class="{active: activeTab === 'weight'}"
-				@click="switchTab('weight')"
-			>
-				<Icon name="Business/line-chart-line.svg" size="16" :color="activeTab === 'weight' ? '$primary-color' : '$gray-500'" />
-				<text class="tab-text">体重趋势</text>
-			</view>
-			<view 
-				class="tab-item" 
-				:class="{active: activeTab === 'nutrition'}"
-				@click="switchTab('nutrition')"
-			>
-				<Icon name="Food/bowl-line.svg" size="16" :color="activeTab === 'nutrition' ? '$primary-color' : '$gray-500'" />
-				<text class="tab-text">营养分析</text>
-			</view>
-			<view 
-				class="tab-item" 
-				:class="{active: activeTab === 'diet'}"
-				@click="switchTab('diet')"
-			>
-				<Icon name="Food/restaurant-line.svg" size="16" :color="activeTab === 'diet' ? '$primary-color' : '$gray-500'" />
-				<text class="tab-text">饮食记录</text>
-			</view>
-			<view
-				class="tab-item"
-				:class="{active: activeTab === 'summary'}"
-				@click="switchTab('summary')"
-			>
-				<Icon name="Business/stack-line.svg" size="16" :color="activeTab === 'summary' ? '$primary-color' : '$gray-500'" />
-				<text class="tab-text">医护总结</text>
+			<view v-for="tab in reportCategories" :key="tab.key" class="tab-item" :class="{ active: activeTab === tab.key || (tab.key === 'weight' && activeTab === 'summary') }" @click="switchTab(tab.key)">
+				<text class="tab-text">{{ tab.label }}</text>
 			</view>
 		</view>
-
+		<view v-if="activeTab === 'weight' || activeTab === 'summary'" class="body-subtabs">
+			<button size="mini" :class="{ selected: activeTab === 'weight' }" @click="switchTab('weight')">身体指标与趋势</button>
+			<button size="mini" :class="{ selected: activeTab === 'summary' }" @click="switchTab('summary')">医护总结</button>
+		</view>
 		<!-- 体重趋势 -->
 		<view class="report-content" v-if="activeTab === 'weight'">
+            <CloudBodyOcr v-if="reportPageVisible && accountId" :patient-id="accountId" />
+			<view class="health-file-card body-upload">
+				<text class="file-title">上传人体成分报告原图</text><text class="report-note">保存本人的人体检测报告，原图仅向本人及有权限的医护人员开放。指标须经医护核对后展示。</text>
+				<input class="report-input" v-model="bodyDraft.title" maxlength="120" placeholder="报告名称，例如：人体成分检测" :disabled="uploadingBody" />
+				<view v-if="bodyDraft.filePath" class="selected-report"><image :src="bodyDraft.filePath" mode="aspectFit" /><text>已选择原图，提交后才会保存</text></view>
+				<view class="upload-actions"><button size="mini" :disabled="uploadingBody" @click="chooseBodyImage">{{ bodyDraft.filePath ? '重新选择' : '拍照 / 上传人体成分报告' }}</button><button type="primary" size="mini" :loading="uploadingBody" :disabled="uploadingBody || !bodyDraft.filePath || !bodyDraft.title.trim()" @click="submitBodyReport">保存人体成分报告</button></view>
+				<text class="report-note">支持 JPG、PNG、WebP，单张不超过 10MB。{{ ocrStatusText }}</text>
+				<text v-if="bodyUploadError" class="report-error">{{ bodyUploadError }}</text>
+			</view>
 			<!-- 时间筛选 -->
 			<view class="time-filter">
 				<view 
@@ -97,16 +79,17 @@
 			<!-- 体重趋势图 -->
 			<view class="chart-container">
 				<view class="chart-header">
-				<Icon name="Business/bar-chart-line.svg" size="16" color="$primary-color" />
+				<Icon name="Business/bar-chart-line.svg" size="16" color="$patient-primary" />
 				<text class="chart-title">体重变化趋势</text>
 				<text class="chart-subtitle">最近{{timeRange.replace('d', '')}}天</text>
 			</view>
-			<view v-if="weightData.records.length === 0" class="empty-state">
+			<text v-if="weightError" class="report-error">{{ weightError }}</text>
+			<view v-if="!weightError && weightData.records.length === 0" class="empty-state">
 				<Icon name="Business/bar-chart-line.svg" size="32" color="$gray-300" />
 				<text class="empty-text">暂无体重数据</text>
 					<text class="empty-tip">请先添加体重记录</text>
 				</view>
-				<view v-else class="chart-wrapper">
+				<view v-if="weightData.records.length" class="chart-wrapper">
 					<canvas 
 						canvas-id="weightChart" 
 						id="weightChart"
@@ -121,165 +104,61 @@
 			</view>
 		</view>
 
-		<!-- 营养分析 -->
-		<view class="report-content" v-if="activeTab === 'nutrition'">
-			<!-- 营养摄入概览 -->
-			<view class="nutrition-overview">
-				<view class="overview-header">
-				<Icon name="Food/bowl-line.svg" size="16" color="$primary-color" />
-				<text class="overview-title">{{calorieRangeTitle}}营养摄入</text>
-				<text class="overview-date">统计区间总量</text>
+		<view v-if="activeTab === 'weight'" class="report-content">
+			<text class="section-heading">人体成分测量</text>
+			<text v-if="careError" class="report-error">{{ careError }}</text>
+			<view v-if="!careLoading && !careError && !bodyReports.length" class="empty-state"><text class="empty-text">暂无人体成分报告</text><text class="empty-tip">健管师或医生记录后会显示在这里</text></view>
+			<view v-for="report in bodyReports" :key="report.id" class="health-file-card">
+				<text class="file-title">{{ formatSummaryDate(report.measuredAt) }} · 人体成分</text>
+				<text class="report-note">{{ bodyReportSource(report) }}</text>
+				<view class="body-metrics"><view v-for="metric in bodyMetrics(report)" :key="metric.key"><text>{{ metric.label }}</text><text>{{ metric.value }} {{ metric.unit }}</text></view></view>
 			</view>
-				<view class="nutrition-circle">
-					<view class="circle-chart">
-						<text class="circle-value">{{totalCalories}}</text>
-						<text class="circle-unit">kcal</text>
-					</view>
-					<text class="circle-target">日均: {{averageDailyCalories}}kcal</text>
-				</view>
-			</view>
-
-			<!-- 卡路里摄入趋势图 -->
-			<view class="chart-container">
-				<view class="chart-header">
-				<Icon name="Business/line-chart-line.svg" size="16" color="$primary-color" />
-				<text class="chart-title">卡路里摄入趋势</text>
-					<view class="time-filter">
-						<text 
-							class="time-btn" 
-							:class="{active: calorieTimeRange === '7d'}"
-							@click="setCalorieTimeRange('7d')"
-						>7天</text>
-						<text 
-							class="time-btn" 
-							:class="{active: calorieTimeRange === '30d'}"
-							@click="setCalorieTimeRange('30d')"
-						>30天</text>
-						<text 
-							class="time-btn" 
-							:class="{active: calorieTimeRange === '90d'}"
-							@click="setCalorieTimeRange('90d')"
-						>90天</text>
-					</view>
-				</view>
-				<view v-if="calorieData.records.length === 0" class="empty-state">
-				<Icon name="Business/bar-chart-line.svg" size="32" color="$gray-300" />
-				<text class="empty-text">暂无卡路里数据</text>
-					<text class="empty-tip">请先添加饮食记录</text>
-				</view>
-				<view v-else class="chart-wrapper">
-					<canvas 
-						canvas-id="calorieChart" 
-						class="calorie-chart"
-						@touchstart="onCalorieChartTouch"
-					></canvas>
-					<view class="chart-info">
-						<text class="chart-records">{{calorieData.records.length}}条记录</text>
-						<text class="chart-trend" :class="calorieTrendClass">{{calorieTrendText}}</text>
-					</view>
-				</view>
-			</view>
-
-
 		</view>
 
-		<!-- 饮食记录 -->
-		<view class="report-content" v-if="activeTab === 'diet'">
-			<!-- 日期选择 -->
-			<view class="date-selector">
-				<view class="date-nav" @click="changeDay(-1)">
-				<Icon name="Arrows/arrow-left-line.svg" size="18" color="$gray-600" />
+		<view v-if="activeTab === 'exercise'" class="report-content">
+			<text class="section-heading">运动评估与处方</text>
+			<text class="report-note">营养师核对并发送后可查看；过期或撤销后需重新授权。</text>
+			<text v-if="careError" class="report-error">{{ careError }}</text>
+			<view v-if="!careLoading && !careError && !exerciseReports.length" class="empty-state"><text class="empty-text">暂无有效运动报告</text><text class="empty-tip">请等待营养师核对并发送</text></view>
+			<view v-for="report in exerciseReports" :key="report.id" class="health-file-card">
+				<text class="file-title">运动评估 · {{ formatSummaryDate(report.publishedAt || report.createdAt) }}</text>
+				<text class="report-note">{{ report.assessment }}</text>
+				<button class="report-action" size="mini" @click="openExerciseReport(report)">查看处方与动作视频</button>
 			</view>
-			<view class="date-display" @click="toggleCalendar">
-				<text class="date-text">{{selectedDate}}</text>
-				<Icon name="Business/calendar-line.svg" size="18" color="$gray-600" />
-			</view>
-			<view class="date-nav" @click="changeDay(1)">
-				<Icon name="Arrows/arrow-right-line.svg" size="18" color="$gray-600" />
-			</view>
-			</view>
-			
-			<!-- 日历预览 -->
-			<view class="calendar-container" v-if="showCalendar">
-				<view class="calendar-header">
-					<view class="month-nav" @click="changeCalendarMonth(-1)">
-						<Icon name="Arrows/arrow-left-line.svg" size="18" color="$gray-600" />
-					</view>
-					<view class="month-display">
-						<text class="month-text">{{currentCalendarMonthText}}</text>
-					</view>
-					<view class="month-nav" @click="changeCalendarMonth(1)">
-						<Icon name="Arrows/arrow-right-line.svg" size="18" color="$gray-600" />
-					</view>
-				</view>
-				<view class="calendar-weekdays">
-					<text class="weekday" v-for="day in weekdays" :key="day">{{day}}</text>
-				</view>
-				<view class="calendar-days">
-					<view 
-						class="calendar-day" 
-						:class="{
-							'other-month': day.isOtherMonth,
-							'selected': day.date === selectedDate,
-							'today': day.isToday,
-							'has-record': day.hasRecord
-						}"
-						v-for="day in calendarDays" 
-						:key="day.key"
-						@click="selectDate(day)"
-					>
-						<text class="day-text">{{day.day}}</text>
-					</view>
-				</view>
-			</view>
+		</view>
 
-			<!-- 饮食记录列表 -->
-			<view class="diet-records">
-				<view v-if="!hasDietRecords" class="empty-state">
-				<Icon name="Food/restaurant-line.svg" size="32" color="$gray-300" />
-				<text class="empty-text">今日暂无饮食记录</text>
-					<text class="empty-tip">点击下方按钮添加饮食记录</text>
-				</view>
-				<view 
-					v-else
-					class="meal-section" 
-					v-for="(meal, mealType) in dietData.records" 
-					:key="mealType"
-				>
-					<view class="meal-header">
-						<Icon :name="meal.icon" size="16" color="$primary-color" />
-						<text class="meal-name">{{meal.name}}</text>
-						<text class="meal-calories">{{meal.totalCalories}}kcal</text>
-					</view>
-					<view class="food-list">
-						<view 
-							class="food-item" 
-							v-for="(food, index) in meal.foods" 
-							:key="index"
-						>
-							<view class="food-info">
-								<text class="food-name">{{food.name}}</text>
-								<text class="food-amount">{{food.amount}}</text>
-							</view>
-							<text class="food-calories">{{food.calories}}kcal</text>
-						</view>
-					</view>
-				</view>
+		<view v-if="activeTab === 'medical'" class="report-content">
+			<text class="section-heading">医学体检报告</text>
+			<text class="report-note">可由本人或健管师上传。原图由服务端核验权限后打开。</text>
+			<view class="health-file-card medical-upload">
+				<text class="file-title">上传医学报告原图</text>
+				<input class="report-input" v-model="medicalDraft.title" maxlength="120" placeholder="报告名称，例如：年度体检" :disabled="uploadingMedical" />
+				<view v-if="medicalDraft.filePath" class="selected-report"><image :src="medicalDraft.filePath" mode="aspectFit" /><text>已选择原图，提交后才会保存</text></view>
+				<view class="upload-actions"><button size="mini" :disabled="uploadingMedical" @click="chooseMedicalImage">{{ medicalDraft.filePath ? '重新选择' : '拍照 / 选择报告' }}</button><button type="primary" size="mini" :loading="uploadingMedical" :disabled="uploadingMedical || !medicalDraft.filePath || !medicalDraft.title.trim()" @click="submitMedicalReport">保存报告</button></view>
+				<text class="report-note">支持 JPG、PNG、WebP，单张不超过 10MB。{{ ocrStatusText }}</text>
+				<text v-if="uploadError" class="report-error">{{ uploadError }}</text>
 			</view>
+		</view>
 
-			<!-- 添加饮食记录按钮 -->
-			<view class="add-diet-btn" @click="addDietRecord">
-				<text class="add-btn-text">+ 添加饮食记录</text>
+		<view v-if="activeTab !== 'summary'" class="report-content">
+			<text v-if="previewError" class="report-error">{{ previewError }}</text>
+			<text v-if="filesLoading" class="report-note">正在加载报告文件…</text>
+			<view v-if="filesError" class="health-file-card"><text class="report-error">{{ filesError }}</text><button size="mini" @click="loadHealthFiles">重试加载</button></view>
+			<view v-for="file in visibleHealthFiles" :key="file.id" class="health-file-card">
+				<text class="file-title">{{ file.title || '健康报告' }}</text><text class="report-note">{{ formatSummaryDate(file.createdAt) }} · 原始报告</text>
+				<button size="mini" class="report-action" :disabled="openingMediaId === file.mediaAssetId" @click="previewHealthFile(file)">{{ openingMediaId === file.mediaAssetId ? '授权加载中…' : (healthReportFileKind(file) === 'pdf' ? '查看 PDF 原件' : '查看报告原图') }}</button>
 			</view>
+			<view v-if="activeTab === 'medical' && !filesLoading && !filesError && !visibleHealthFiles.length" class="empty-state"><text class="empty-text">暂无医学体检报告</text><text class="empty-tip">上传原图后会保留在这里</text></view>
 		</view>
 
 		<!-- 医护周期总结 -->
 		<view class="report-content care-summary-content" v-if="activeTab === 'summary'">
 			<view class="summary-intro">
-				<Icon name="Business/stack-line.svg" size="24" color="$primary-color" />
+				<Icon name="Business/stack-line.svg" size="24" color="$patient-primary" />
 				<view><text class="summary-intro-title">我的医护总结</text><text class="summary-intro-copy">查看医生或营养师对每周、每月健康记录的专业点评</text></view>
 			</view>
-			<view v-if="careSummaries.length === 0" class="empty-state summary-empty">
+			<text v-if="summaryError" class="report-error">{{ summaryError }}</text>
+			<view v-if="!summaryError && careSummaries.length === 0" class="empty-state summary-empty">
 				<Icon name="Business/stack-line.svg" size="36" color="$gray-300" />
 				<text class="empty-text">暂无医护总结</text>
 				<text class="empty-tip">医护人员发布后会显示在这里，并向您发送通知</text>
@@ -292,21 +171,41 @@
 				</view>
 			</view>
 		</view>
+		<view v-if="previewPath" class="protected-preview">
+			<view class="preview-toolbar"><text>{{ previewKind === 'pdf' ? 'PDF 报告原件' : '报告原图' }}</text><button size="mini" @click="closePreview">关闭</button></view>
+			<scroll-view v-if="previewKind === 'image'" scroll-y class="preview-scroll"><image :src="previewPath" mode="widthFix" class="preview-image" @error="previewFailed" /></scroll-view>
+			<!-- #ifdef H5 -->
+			<iframe v-if="previewKind === 'pdf'" :src="previewPath + '#toolbar=0&navpanes=0'" class="preview-pdf" title="PDF 报告原件" referrerpolicy="no-referrer" @error="previewFailed"></iframe>
+			<text v-if="previewKind === 'pdf'" class="pdf-preview-tip">若浏览器无法显示 PDF，请在微信小程序中打开此报告。</text>
+			<!-- #endif -->
+		</view>
 	</view>
 </template>
 
 <script>
 	import { getCareSummaries, getHealthRecords, getHealthReports } from '@/utils/api.js'
 	import { getStorage, showToast, hideLoading } from '@/utils/common.js'
+	import CloudBodyOcr from '@/components/CloudBodyOcr.vue'
 	import Icon from '@/components/Icon.vue'
+	import { REPORT_CATEGORIES, bodyMetrics, bodyReportSource, healthReportFileKind, reportOcrStatus, getPatientCareReports, getPatientHealthFiles, getReportOcrProvider, isPatientSession, reportItems, savePatientMedicalReport, savePatientBodyReport } from '@/utils/patient-reports.js'
+	import { resolveMediaFile, releaseMediaFile } from '@/utils/media-access.js'
 
 	export default {
 		components: {
+            CloudBodyOcr,
 			Icon
 		},
 		data() {
 			return {
 				activeTab: 'weight',
+				reportCategories: REPORT_CATEGORIES,
+				bodyReports: [], exerciseReports: [], healthFiles: [],
+				careError: '', filesError: '', careLoading: false, filesLoading: false,
+				medicalDraft: { title: '', filePath: '', mediaAssetId: '' },
+                bodyDraft: { title: '', filePath: '', mediaAssetId: '' }, uploadingBody: false, bodyUploadError: '',
+				uploadingMedical: false, uploadError: '', openingMediaId: '',
+				ocrStatusText: '文字识别状态尚未确认，保存原图不会自动生成识别结果。',
+				previewPath: '', previewKind: '', nativeDocumentPath: '', nativeDocumentOpening: false, previewError: '', accountId: '', reportPageVisible: false, reportLoadVersion: 0, weightError: '', summaryError: '',
 				timeRange: '7d',
 				currentDate: '',
 				selectedDate: '',
@@ -370,6 +269,10 @@
 			}
 		},
 		computed: {
+			visibleHealthFiles() {
+				const category = REPORT_CATEGORIES.find(item => item.key === this.activeTab)?.category
+				return this.healthFiles.filter(item => item.category === category)
+			},
 			hasDietRecords() {
 				return Object.values(this.dietData.records || {}).some(meal => Array.isArray(meal.foods) && meal.foods.length > 0)
 			},
@@ -535,16 +438,217 @@
 			}
 		},
 		onLoad() {
+			this.registerPreviewPrivacyHooks()
 			this.getCurrentDate()
 			this.selectedDate = this.currentDate
-			this.initUserInfo()
 			this.consumeRequestedTab()
-			this.initPageData()
+			// onShow loads current data and preserves the selected category.
 		},
 		onShow() {
-			if (this.consumeRequestedTab() && this.userInfo) this.loadCareSummaries()
+			// Returning from the system document reader ends its temporary file lease.
+			this.releaseNativeDocument()
+			this.reportPageVisible = true
+			this.initUserInfo()
+			if (!this.userInfo) return
+			this.reportPageVisible = true
+			this.consumeRequestedTab()
+			this.initPageData()
+			this.loadCareReports()
+			this.loadHealthFiles()
 		},
+		onHide() {
+			this.clearLoadedReports()
+			const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : []
+			const route = pages[pages.length - 1]?.route || ''
+			if (route && route !== 'pages/patient/report') this.releaseNativeDocument()
+		},
+		onUnload() { this.clearLoadedReports(); this.releaseNativeDocument(); this.unregisterPreviewPrivacyHooks() },
 		methods: {
+			healthReportFileKind,
+			registerPreviewPrivacyHooks() {
+				this._reportAppHide = () => {
+					this.closePreview()
+					// openDocument can itself hide the page/app while taking the file.
+					// Defer only this hand-off; onShow/account change/unload releases it.
+					if (!this.nativeDocumentOpening) this.releaseNativeDocument()
+				}
+				if (typeof uni.onAppHide === 'function') uni.onAppHide(this._reportAppHide)
+				// #ifdef H5
+				this._reportVisibility = () => { if (document.hidden) this._reportAppHide() }
+				if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this._reportVisibility)
+				// #endif
+			},
+			unregisterPreviewPrivacyHooks() {
+				if (this._reportAppHide && typeof uni.offAppHide === 'function') uni.offAppHide(this._reportAppHide)
+				// #ifdef H5
+				if (this._reportVisibility && typeof document !== 'undefined') document.removeEventListener('visibilitychange', this._reportVisibility)
+				// #endif
+			},
+			releaseNativeDocument() {
+				if (this.nativeDocumentPath) releaseMediaFile(this.nativeDocumentPath)
+				this.nativeDocumentPath = ''
+				this.nativeDocumentOpening = false
+			},
+			openNativeDocument(path) {
+				this.releaseNativeDocument()
+				this.nativeDocumentPath = path
+				this.nativeDocumentOpening = true
+				try {
+					if (typeof uni.openDocument !== 'function') throw new Error('当前环境不支持 PDF 预览，请在微信小程序中打开')
+					uni.openDocument({ filePath: path, fileType: 'pdf', showMenu: false,
+						success: () => {
+							if (this.nativeDocumentPath !== path) return
+							this.nativeDocumentOpening = false
+							if (!this.stillSameAccount()) this.releaseNativeDocument()
+						},
+						fail: () => {
+							if (this.nativeDocumentPath !== path) return
+							this.releaseNativeDocument()
+							this.previewError = 'PDF 无法打开，请重新授权加载，或联系健管师检查原文件。'
+							showToast('PDF 预览失败')
+						}
+					})
+				} catch (error) { this.releaseNativeDocument(); this.previewError = error.message; showToast(error.message) }
+			},
+			clearLoadedReports() {
+				this.reportPageVisible = false
+				this.reportLoadVersion += 1
+				this.bodyReports = []; this.exerciseReports = []; this.healthFiles = []; this.careSummaries = []
+				this.weightRecords = []; this.weightData.records = []
+				this.previewError = ''
+				this.currentWeight = null; this.currentBMI = null; this.targetWeight = null; this.weightChange = 0
+				this.careLoading = false; this.filesLoading = false; this.loading = false; this.openingMediaId = ''
+				clearTimeout(this.switchTimer); clearTimeout(this.timeRangeTimer)
+				this.closePreview()
+			},
+			closePreview() {
+				if (this.previewPath) releaseMediaFile(this.previewPath)
+				this.previewPath = ''
+				this.previewKind = ''
+			},
+			previewFailed() { this.closePreview(); this.previewError = '此报告无法预览，请重新授权加载，或联系健管师检查原文件。'; showToast('报告预览失败') },
+			stillSameAccount() {
+				const user = getStorage('userInfo')
+				return isPatientSession(user) && this.accountId === String(user.userId || user.id || '')
+			},
+			bodyMetrics, bodyReportSource,
+			async loadCareReports() {
+				if (!this.userInfo) return
+				const version = this.reportLoadVersion
+				this.careLoading = true
+				this.careError = ''
+				try {
+					const result = await getPatientCareReports(this.userInfo, { loading: false, showError: false })
+					if (version !== this.reportLoadVersion || !this.reportPageVisible || !this.stillSameAccount()) return
+					this.bodyReports = reportItems(result.data?.bodyReports)
+					this.exerciseReports = reportItems(result.data?.exerciseReports)
+				} catch (error) {
+					if (version !== this.reportLoadVersion) return
+					this.bodyReports = []; this.exerciseReports = []
+					this.careError = error.statusCode === 404 ? '健康管理档案尚未建立，请联系健管师。' : (error.message || '报告加载失败，请稍后重试')
+				} finally { if (version === this.reportLoadVersion) this.careLoading = false }
+			},
+			async loadHealthFiles() {
+				if (!this.userInfo) return
+				const version = this.reportLoadVersion
+				this.filesLoading = true
+				this.filesError = ''
+				try {
+					const result = await getPatientHealthFiles(this.userInfo, { loading: false, showError: false })
+					if (version !== this.reportLoadVersion || !this.reportPageVisible || !this.stillSameAccount()) return
+					this.healthFiles = reportItems(result.data)
+				} catch (error) {
+					if (version !== this.reportLoadVersion) return
+					this.healthFiles = []
+					this.filesError = [404, 503].includes(error.statusCode) ? '报告文件服务暂不可用，请稍后重试。' : (error.message || '报告文件加载失败')
+				} finally { if (version === this.reportLoadVersion) this.filesLoading = false }
+				try {
+					const result = await getReportOcrProvider({ loading: false, showError: false })
+					if (version !== this.reportLoadVersion || !this.stillSameAccount()) return
+					this.ocrStatusText = reportOcrStatus(result.data)
+				} catch { this.ocrStatusText = '文字识别服务暂不可用，可先保存原图供医护人员查看。' }
+			},
+			chooseMedicalImage() {
+				if (this.uploadingMedical) return
+				uni.chooseImage({ count: 1, sizeType: ['original'], sourceType: ['album', 'camera'], success: (result) => {
+					const file = result.tempFiles?.[0]
+					if (file?.size > 10 * 1024 * 1024) { showToast('报告原图不能超过 10MB'); return }
+					this.medicalDraft.filePath = result.tempFilePaths?.[0] || ''
+					this.medicalDraft.mediaAssetId = ''
+					this.uploadError = ''
+				}, fail: error => { if (!String(error.errMsg || '').includes('cancel')) showToast('选择图片失败，请检查相机或相册权限') } })
+			},
+			async submitMedicalReport() {
+				if (this.uploadingMedical) return
+				this.uploadingMedical = true
+				this.uploadError = ''
+				try {
+					const draft = this.medicalDraft
+					const result = await savePatientMedicalReport(this.userInfo, draft, { onUploaded: id => { if (this.stillSameAccount() && this.medicalDraft === draft) draft.mediaAssetId = id } })
+					if (!this.stillSameAccount() || this.medicalDraft !== draft) return
+					if (!result.data?.id) throw new Error('服务端未确认报告保存，请保留输入并重试')
+					this.medicalDraft = { title: '', filePath: '', mediaAssetId: '' }
+					showToast('报告已保存')
+					await this.loadHealthFiles()
+				} catch (error) { if (this.stillSameAccount()) this.uploadError = error.message || '报告保存失败，已保留输入，请重试' }
+				finally { this.uploadingMedical = false }
+			},
+			chooseBodyImage() {
+				if (this.uploadingBody) return
+				uni.chooseImage({ count: 1, sizeType: ['original'], sourceType: ['album', 'camera'], success: (result) => {
+					const file = result.tempFiles?.[0]
+					if (file?.size > 10 * 1024 * 1024) { showToast('报告原图不能超过 10MB'); return }
+					this.bodyDraft.filePath = result.tempFilePaths?.[0] || ''
+					this.bodyDraft.mediaAssetId = ''
+					this.bodyUploadError = ''
+				}, fail: error => { if (!String(error.errMsg || '').includes('cancel')) showToast('选择图片失败，请检查相机或相册权限') } })
+			},
+			async submitBodyReport() {
+				if (this.uploadingBody) return
+				this.uploadingBody = true
+				this.bodyUploadError = ''
+				try {
+					const draft = this.bodyDraft
+					const result = await savePatientBodyReport(this.userInfo, draft, { onUploaded: id => { if (this.stillSameAccount() && this.bodyDraft === draft) draft.mediaAssetId = id } })
+					if (!this.stillSameAccount() || this.bodyDraft !== draft) return
+					if (!result.data?.id) throw new Error('服务端未确认报告保存，请保留输入并重试')
+					this.bodyDraft = { title: '', filePath: '', mediaAssetId: '' }
+					showToast('报告已保存')
+					await this.loadHealthFiles()
+				} catch (error) { if (this.stillSameAccount()) this.bodyUploadError = error.message || '报告保存失败，已保留输入，请重试' }
+				finally { this.uploadingBody = false }
+			},
+			async previewHealthFile(file) {
+				if (!file.mediaAssetId || this.openingMediaId) return
+				const kind = healthReportFileKind(file)
+				if (!kind) { this.previewError = '此报告格式暂不支持预览，请联系健管师确认文件格式。'; return }
+				const version = this.reportLoadVersion
+				this.openingMediaId = file.mediaAssetId
+				this.previewError = ''
+				try {
+					const path = await resolveMediaFile(file.mediaAssetId)
+					if (version !== this.reportLoadVersion || !this.reportPageVisible || !this.stillSameAccount()) { releaseMediaFile(path); return }
+					this.closePreview()
+					this.releaseNativeDocument()
+					if (kind === 'pdf') {
+						// #ifdef H5
+						if (!String(path).startsWith('blob:')) { releaseMediaFile(path); throw new Error('PDF 未返回受保护的本地文件') }
+						this.previewKind = 'pdf'
+						this.previewPath = path
+						// #endif
+						// #ifndef H5
+						this.openNativeDocument(path)
+						// #endif
+					} else {
+						this.previewKind = 'image'
+						this.previewPath = path
+					}
+				} catch (error) { if (version === this.reportLoadVersion) showToast(error.message || '报告原图授权失败') }
+				finally { if (version === this.reportLoadVersion) this.openingMediaId = '' }
+			},
+			openExerciseReport(report) {
+				uni.navigateTo({ url: '/pages/shared-report/shared-report?reportId=' + encodeURIComponent(report.id) })
+			},
 			optionalNumber(value) {
 				if (value === null || value === undefined || value === '') return null
 				const number = Number(value)
@@ -569,8 +673,21 @@
 			},
 			// 初始化用户信息
 			initUserInfo() {
-				this.userInfo = getStorage('userInfo')
-				if (!this.userInfo) {
+				const nextUser = getStorage('userInfo')
+				const nextId = String(nextUser?.userId || nextUser?.id || '')
+				if (this.accountId && this.accountId !== nextId) {
+					this.releaseNativeDocument()
+					this.clearLoadedReports()
+					this.medicalDraft = { title: '', filePath: '', mediaAssetId: '' }
+					this.bodyDraft = { title: '', filePath: '', mediaAssetId: '' }; this.bodyUploadError = '';
+                    this.uploadError = ''; this.activeTab = 'weight'
+				}
+				this.accountId = nextId
+				this.userInfo = nextUser
+				if (!getStorage('token') || !isPatientSession(this.userInfo)) {
+					this.userInfo = null
+					this.releaseNativeDocument()
+					this.clearLoadedReports()
 					uni.showModal({
 						title: '提示',
 						content: '请先登录',
@@ -635,8 +752,12 @@
 
 			// 加载体重数据
 			async loadWeightData() {
+				const version = this.reportLoadVersion
+				const range = this.timeRange
+				this.weightError = ''
 				try {
-					const result = await getHealthReports({ range: this.timeRange })
+					const result = await getHealthReports({ range }, { loading: false, showError: false })
+					if (version !== this.reportLoadVersion || range !== this.timeRange || !this.stillSameAccount()) return
 					
 					if (result.code === 200) {
 						const report = result.data || {}
@@ -663,7 +784,7 @@
 						})
 					}
 				} catch (error) {
-					console.error('加载体重数据失败:', error)
+					if (version === this.reportLoadVersion) this.weightError = error.message || '体重趋势加载失败，请重试'
 				}
 			},
 
@@ -687,23 +808,27 @@
 			},
 
 			async loadCareSummaries() {
+				const version = this.reportLoadVersion
+				this.summaryError = ''
 				try {
-					const result = await getCareSummaries()
+					const result = await getCareSummaries({ loading: false, showError: false })
+					if (version !== this.reportLoadVersion || !this.stillSameAccount()) return
 					this.careSummaries = result.code === 200 ? (Array.isArray(result.data) ? result.data : []) : []
 				} catch (error) {
-					console.error('加载医护总结失败:', error)
+					if (version !== this.reportLoadVersion) return
 					this.careSummaries = []
-					showToast('医护总结加载失败')
+					this.summaryError = error.message || '医护总结加载失败'
 				}
 			},
 
 			formatSummaryDate(value) {
+				if (!value) return '--'
 				const date = new Date(value)
 				return Number.isNaN(date.getTime()) ? '--' : `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`
 			},
 			summaryMetric(summary, key, suffix = '', signed = false) {
-				const value = summary && summary.metrics ? Number(summary.metrics[key]) : NaN
-				if (!Number.isFinite(value)) return '--'
+				const value = this.optionalNumber(summary?.metrics?.[key])
+				if (value === null || !Number.isFinite(value)) return '--'
 				return `${signed && value > 0 ? '+' : ''}${key === 'weightChangeKg' ? value.toFixed(1) : value}${suffix}`
 			},
 			summaryTaskMetric(summary) {
@@ -792,6 +917,8 @@
 				if (this.activeTab === tab) return // 避免重复加载
 				
 				this.activeTab = tab
+				if (tab === 'exercise' || tab === 'weight') this.loadCareReports()
+				if (tab !== 'summary') this.loadHealthFiles()
 				
 				// 延迟加载，避免频繁切换时的多次请求
 				clearTimeout(this.switchTimer)
@@ -957,7 +1084,7 @@
 
 			// 绘制体重趋势图
 			drawWeightChart() {
-				if (this.weightData.records.length === 0) return
+				if (this.activeTab !== 'weight' || !this.reportPageVisible || this.weightData.records.length === 0) return
 				
 				const ctx = uni.createCanvasContext('weightChart', this)
 				const canvasWidth = 320
@@ -1301,7 +1428,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		z-index: 1000;
+		z-index: 5;
+		pointer-events: none;
 	}
 
 	.loading-content {
@@ -1933,6 +2061,33 @@
 		color: #666666;
 		display: block;
 	}
+
+	.body-subtabs { display: flex; gap: 16rpx; margin-bottom: 24rpx; }
+	.body-subtabs button { flex: 1; margin: 0; background: #fff; color: #52626c; }
+	.body-subtabs .selected { background: #e7f4f7; color: #226b8b; }
+	.section-heading { display: block; font-size: 30rpx; font-weight: 650; margin: 28rpx 0 16rpx; }
+	.health-file-card { background: white; padding: 28rpx; border-radius: 20rpx; margin-bottom: 20rpx; }
+	.file-title { display: block; font-size: 29rpx; font-weight: 600; overflow-wrap: anywhere; }
+	.report-note, .report-error { display: block; font-size: 25rpx; line-height: 1.7; margin: 12rpx 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+	.report-note { color: #657781; }
+	.report-error { color: #a84431; }
+	.report-action { margin: 18rpx 0 0; background: #e7f4f7; color: #226b8b; }
+	.body-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 20rpx; margin-top: 20rpx; }
+	.body-metrics view text { display: block; font-size: 26rpx; line-height: 1.8; }
+	.body-metrics view text:first-child { color: #75828a; font-size: 23rpx; }
+	.report-input { height: 88rpx; background: #f3f7f8; border-radius: 12rpx; padding: 0 20rpx; margin: 24rpx 0; font-size: 27rpx; }
+	.upload-actions { display: flex; gap: 16rpx; flex-wrap: wrap; }
+	.upload-actions button { margin: 0; }
+	.selected-report image { display: block; width: 200rpx; height: 200rpx; }
+	.selected-report text { display: block; font-size: 24rpx; color: #657781; margin: 12rpx 0; }
+
+	.protected-preview { position: fixed; top: var(--window-top, 0px); left: 0; right: 0; bottom: calc(118rpx + env(safe-area-inset-bottom)); background: #14252e; z-index: 30; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
+	.preview-toolbar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 16rpx 24rpx; color: white; font-size: 28rpx; }
+	.preview-toolbar button { margin: 0; }
+	.preview-scroll { flex: 1; height: 0; }
+	.preview-image { display: block; width: 100%; }
+	.preview-pdf { flex: 1; width: 100%; min-height: 0; border: 0; background: #fff; }
+	.pdf-preview-tip { flex-shrink: 0; padding: 12rpx 24rpx; color: #fff; font-size: 22rpx; }
 </style>
 
 <style>
@@ -2306,4 +2461,28 @@
 	.patient-summary-comment-copy { display: block; }
 	.patient-summary-comment-title { font-size: 21rpx; font-weight: 700; color: #187a96; }
 	.patient-summary-comment-copy { margin-top: 10rpx; font-size: 24rpx; line-height: 1.75; color: #3c5d69; white-space: pre-wrap; }
+</style>
+
+<style scoped lang="scss">
+@import "../../styles/patient-theme.scss";
+.patient-reports { padding: 28rpx 28rpx calc(130rpx + env(safe-area-inset-bottom)); background: #f4f7fb; }
+.patient-reports .report-tabs { border-color: #e3e8f2; border-radius: 14rpx; padding: 6rpx; box-shadow: none; }
+.patient-reports .report-tabs .tab-item { min-height: 44px; border-radius: 10rpx; }.patient-reports .report-tabs .tab-item.active { background: #2b5fff; box-shadow: none; }.patient-reports .report-tabs .tab-item.active .tab-text { color: white; }
+.patient-reports .report-tabs .tab-text { font-size: 27rpx; color: #5b6b8d; }
+.patient-reports .health-file-card, .patient-reports .chart-container, .patient-reports .stat-card, .patient-reports .patient-summary-card { background: white; border: 1px solid #e3e8f2; border-radius: 16rpx; box-shadow: none; }
+.patient-reports .file-title, .patient-reports .chart-title, .patient-reports .stat-value { color: #12234c; }
+.patient-reports .report-note { color: #63718e; font-size: 24rpx; }.patient-reports .report-input { background: white; border: 1px solid #d6deed; border-radius: 12rpx; }
+.patient-reports .upload-actions { flex-wrap: wrap; gap: 14rpx; }.patient-reports .upload-actions button { margin: 0; flex: 1 1 240rpx; white-space: normal; line-height: 1.55; padding: 16rpx; min-height: 44px; color: #2458db; background: #edf2ff; }
+.patient-reports .upload-actions button[type="primary"] { background: #2b5fff; color: #fff; }
+.patient-reports .body-subtabs { display: flex; gap: 12rpx; }.patient-reports .body-subtabs button { min-height: 44px; font-size: 24rpx; flex: 1; margin: 0; line-height: 1.6; padding: 12rpx 4rpx; background: #fff; color: #5d6b8d; }
+.patient-reports .body-subtabs button.selected { background: #edf2ff; color: #2458db; }
+.patient-reports .filter-item.active { background: #edf2ff; }.patient-reports .filter-item.active .filter-text { color: #2458db; }
+.patient-reports .time-btn.active { background: #2b5fff; }.patient-reports .summary-intro { background: #edf5ff; border-color: #dce7fa; border-radius: 16rpx; }
+.patient-reports .stats-cards .stat-label, .patient-reports .stats-cards .stat-change { font-size: 23rpx; line-height: 1.5; }.patient-reports .chart-header { flex-wrap: wrap; }
+
+</style>
+
+<style scoped>
+/* Narrow-screen action spacing and reachable controls. */
+.patient-reports .time-filter .filter-item { min-height: 44px; display: flex; align-items: center; justify-content: center; }
 </style>

@@ -1,9 +1,11 @@
-export type PractitionerRole = 'DOCTOR' | 'NUTRITIONIST' | 'ADMIN';
+export type PractitionerRole = 'DOCTOR' | 'NUTRITIONIST' | 'HEALTH_MANAGER' | 'EXERCISE_COACH' | 'ADMIN';
 
 export type Practitioner = {
   id: string;
   displayName: string;
   role: PractitionerRole;
+  mustChangePassword?: boolean;
+  initialPasswordExpiresAt?: string | null;
   hospital?: string;
   department?: string;
   title?: string;
@@ -226,8 +228,8 @@ export type Paginated<T> = {
   pageSize?: number;
 };
 
-export type UserRole = 'PATIENT' | 'DOCTOR' | 'NUTRITIONIST' | 'ADMIN';
-export type UserStatus = 'ACTIVE' | 'DISABLED';
+export type UserRole = 'PATIENT' | 'DOCTOR' | 'NUTRITIONIST' | 'HEALTH_MANAGER' | 'EXERCISE_COACH' | 'ADMIN';
+export type UserStatus = 'ACTIVE' | 'DISABLED' | 'DELETED';
 
 export type ManagedUser = {
   id: string;
@@ -236,6 +238,7 @@ export type ManagedUser = {
   displayName: string;
   role: UserRole;
   status: UserStatus;
+  deletedAt?: string | null;
   lastLoginAt?: string | null;
   createdAt: string;
   updatedAt?: string;
@@ -245,6 +248,7 @@ export type AdminSummary = {
   totalUsers: number;
   activeUsers: number;
   disabledUsers: number;
+  deletedUsers: number;
   auditLogs: number;
   usersByRole: Partial<Record<UserRole, number>>;
 };

@@ -1,6 +1,12 @@
 node_modules
 dist
-.env
-uploads
+dist-release
 coverage
-npm-debug.log*
+uploads
+.env
+.env.*
+*.log
+output
+prisma/seed.ts
+scripts/*
+!scripts/preflight-production.mjs

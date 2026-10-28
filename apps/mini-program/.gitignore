@@ -19,3 +19,7 @@ dist
 *.njsproj
 *.sln
 *.sw?
+# Local validation caches
+.npm-cache/
+.typecheck-tools/
+.playwright-cli/

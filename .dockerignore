@@ -1,0 +1,32 @@
+# The root build context is only for the two public web applications.
+**
+!apps/
+!apps/clinician-admin/
+!apps/clinician-admin/**
+!apps/mini-program/
+!apps/mini-program/**
+!deploy/
+!deploy/web.Dockerfile
+!deploy/nginx.deploy.conf
+
+# Never send local configuration, dependencies, or QA evidence to Docker.
+**/node_modules
+**/dist
+**/dist-release
+**/coverage
+**/output
+**/outputs
+**/artifacts
+**/audit-output
+**/icon-audit
+**/.playwright-cli
+**/.cache
+**/.vite
+**/.git
+**/.env
+**/.env.*
+**/*.log
+**/*.pid
+**/*.tsbuildinfo
+**/*.tgz
+**/*.zip

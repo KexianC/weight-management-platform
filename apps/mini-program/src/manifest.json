@@ -1,5 +1,5 @@
 {
-    "name" : "数字减重助手",
+    "name" : "MedTalent健康数字助手",
     "appid" : "__UNI__2DFFCBF",
     "description" : "专业体重管理与健康随访",
     "versionName" : "1.0.0",
@@ -63,6 +63,6 @@
             "mode" : "hash",
             "base" : "/h5/"
         },
-        "title" : "数字减重助手"
+        "title" : "MedTalent健康数字助手"
     }
 }

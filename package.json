@@ -2,7 +2,7 @@
   "name": "weight-care-platform",
   "private": true,
   "scripts": {
-    "build": "npm --prefix apps/api run build && npm --prefix apps/clinician-admin run build && npm --prefix apps/patient-mobile run build && npm --prefix apps/mini-program run build:h5 && npm --prefix apps/mini-program run build:mp-weixin",
+    "build": "npm --prefix apps/api run build:release && npm --prefix apps/clinician-admin run build && npm --prefix apps/mini-program run build:h5 && npm --prefix apps/mini-program run build:mp-weixin",
     "test": "npm --prefix apps/api test && npm --prefix apps/clinician-admin run test && npm --prefix apps/mini-program test",
     "dev:api": "npm --prefix apps/api run start:dev",
     "dev:admin": "npm --prefix apps/clinician-admin run dev",

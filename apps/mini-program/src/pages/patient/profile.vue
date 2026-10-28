@@ -1,8 +1,8 @@
 <template>
-	<view class="profile-page">
+	<view class="profile-page patient-theme">
 		<view class="profile-card">
 			<view class="avatar-wrap">
-				<Icon name="User/user-line.svg" size="32" color="#ffffff" />
+				<Icon name="User/user-line.svg" size="32" color="$patient-primary" />
 			</view>
 			<view class="profile-copy">
 				<text class="profile-name">{{ userInfo.name || '患者用户' }}</text>
@@ -26,14 +26,14 @@
 		<view class="section-title">常用服务</view>
 		<view class="menu-card">
 			<view class="menu-row" @tap="goToMessages">
-				<view class="menu-icon"><Icon name="Communication/message-line.svg" size="20" color="$primary-color" /></view>
+				<view class="menu-icon"><Icon name="Communication/message-line.svg" size="20" color="$patient-primary" /></view>
 				<text class="menu-label">我的消息</text>
 				<view class="row-badge" v-if="unreadCount > 0">{{ unreadCount > 99 ? '99+' : unreadCount }}</view>
 				<Icon name="Arrows/arrow-right-s-line.svg" size="18" color="$gray-400" />
 			</view>
 			<view class="menu-divider"></view>
 			<view class="menu-row" @tap="goToBinding">
-				<view class="menu-icon"><Icon name="Business/links-line.svg" size="20" color="$primary-color" /></view>
+				<view class="menu-icon"><Icon name="Business/links-line.svg" size="20" color="$patient-primary" /></view>
 				<view class="menu-copy">
 					<text class="menu-label">医生/营养师绑定</text>
 					<text class="menu-hint">{{ bindingHint }}</text>
@@ -58,7 +58,7 @@
 		</view>
 
 		<button class="logout-button" @tap="confirmLogout">退出登录</button>
-		<text class="version-text">数字减重助手</text>
+		<text class="version-text">MedTalent健康数字助手</text>
 	</view>
 </template>
 
@@ -148,6 +148,7 @@
 		box-sizing: border-box;
 		min-height: 100vh;
 		padding: 28rpx 28rpx 54rpx;
+		padding-bottom: calc(54rpx + env(safe-area-inset-bottom));
 		background: #f4f9fb;
 	}
 
@@ -345,4 +346,16 @@
 		text-align: center;
 		color: #a4b5bc;
 	}
+</style>
+
+<style scoped lang="scss">
+@import "../../styles/patient-theme.scss";
+.profile-page { padding: 28rpx 28rpx calc(120rpx + env(safe-area-inset-bottom)); background: #f4f7fb; }
+.profile-page .profile-card { background: #fff url('../../static/brand/third-wave.webp') no-repeat right center; background-size: cover; border-radius: 16rpx; border: 1px solid #e3e8f2; box-shadow: none; padding: 40rpx 28rpx; }
+.profile-page .avatar-wrap { flex: none; border-color: #dce7ff; background: #edf3ff; }.profile-page .profile-name { color: #08163d; }.profile-page .profile-phone { color: #617091; font-size: 24rpx; }
+.profile-page .role-chip { background: #edf2ff; border-color: #dce7ff; color: #2458db; flex: none; }
+.profile-page .status-card, .profile-page .menu-card { border-color: #e3e8f2; border-radius: 16rpx; box-shadow: none; }.profile-page .status-value { color: #2b5fff; }.profile-page .status-label { font-size: 24rpx; color: #63718e; }
+.profile-page .section-title { font-size: 29rpx; color: #12234c; }.profile-page .menu-label { color: #17284c; font-size: 29rpx; }.profile-page .menu-hint { font-size: 23rpx; color: #63718e; }
+.profile-page .menu-icon { background: #edf3ff; border-radius: 16rpx; }.profile-page .menu-row { min-height: 112rpx; }.profile-page .menu-divider { background: #e3e8f2; }.profile-page .logout-button { border-radius: 12rpx; }
+
 </style>

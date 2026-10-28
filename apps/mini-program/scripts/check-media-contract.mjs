@@ -6,8 +6,8 @@ const followSource = fs.readFileSync(path.join(root, 'src', 'api', 'follow.js'),
 const apiSource = fs.readFileSync(path.join(root, 'src', 'utils', 'api.js'), 'utf8');
 
 const assertions = [
-  [followSource.includes("referenceType: 'FOLLOW_UP'"), 'follow upload must use FOLLOW_UP referenceType'],
-  [followSource.includes('referenceId: followId'), 'follow upload must bind the media asset to the follow-up id'],
+  [!followSource.includes("referenceType:"), 'upload must leave business binding to follow-up completion'],
+  [followSource.includes('return complete({ followId, result: normalizedResult'), 'follow completion must submit the owning follow-up id with asset descriptors'],
   [followSource.includes('if (!assetId) throw'), 'follow upload must reject responses without a persistent asset id'],
   [followSource.includes('return { assetId }'), 'follow result must persist the asset id instead of only a signed URL'],
   [apiSource.includes('/media/${encodeURIComponent(assetId)}/url'), 'follow detail must refresh an authorized media URL'],

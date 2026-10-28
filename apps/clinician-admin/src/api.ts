@@ -110,7 +110,7 @@ function normalizeSession(value: unknown): AuthSession {
   const user = row.user && typeof row.user === 'object' ? row.user as Record<string, unknown> : {};
   const accessToken = typeof row.accessToken === 'string' ? row.accessToken : '';
   const role = typeof user.role === 'string' ? user.role.toUpperCase() : '';
-  if (!accessToken || !['DOCTOR', 'NUTRITIONIST', 'ADMIN'].includes(role)) {
+  if (!accessToken || !['DOCTOR', 'NUTRITIONIST', 'HEALTH_MANAGER', 'EXERCISE_COACH', 'ADMIN'].includes(role)) {
     throw new ApiError('当前账号无权访问管理后台', 403, value);
   }
   const practitionerProfile = user.practitionerProfile && typeof user.practitionerProfile === 'object'
@@ -123,6 +123,8 @@ function normalizeSession(value: unknown): AuthSession {
       id: typeof user.id === 'string' ? user.id : '',
       displayName: typeof user.displayName === 'string' ? user.displayName : '管理人员',
       role: role as AuthSession['user']['role'],
+      mustChangePassword: user.mustChangePassword === true,
+      initialPasswordExpiresAt: typeof user.initialPasswordExpiresAt === 'string' ? user.initialPasswordExpiresAt : null,
       hospital: typeof practitionerProfile.hospital === 'string' ? practitionerProfile.hospital : undefined,
       department: typeof practitionerProfile.department === 'string' ? practitionerProfile.department : undefined,
       title: typeof practitionerProfile.title === 'string' ? practitionerProfile.title : undefined,
@@ -215,18 +217,34 @@ export class ApiClient {
       ...init,
       headers: {
         accept: 'application/json',
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...(body === undefined || body instanceof FormData ? {} : { 'content-type': 'application/json' }),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
         ...headers,
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
     });
     const contentType = response.headers.get('content-type') ?? '';
     const payload = contentType.includes('application/json')
       ? await response.json()
       : await response.text();
-    if (!response.ok) throw new ApiError(errorMessage(payload, response.status), response.status, payload);
+    if (!response.ok) {
+      if (authenticated && response.status === 401 && this.getAccessToken() === token && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') window.dispatchEvent(new Event('medtalent:session-expired'));
+      throw new ApiError(errorMessage(payload, response.status), response.status, payload);
+    }
     return unwrapEnvelope(payload) as T;
+  }
+
+  async mediaBlob(id: string, signedUrl: string): Promise<Blob> {
+    const base = new URL(this.baseUrl, window.location.origin);
+    const url = new URL(signedUrl, base);
+    if (url.origin !== base.origin || url.pathname !== base.pathname.replace(/\/$/, '') + '/media/' + encodeURIComponent(id) + '/content') {
+      throw new ApiError('媒体地址与当前服务不匹配', 400);
+    }
+    const token = this.getAccessToken();
+    if (!token) throw new ApiError('登录状态已失效，请重新登录', 401);
+    const response = await fetch(url.href, { headers: { authorization: 'Bearer ' + token }, cache: 'no-store', redirect: 'error' });
+    if (!response.ok) throw new ApiError('文件不可用或访问权限已失效', response.status);
+    return response.blob();
   }
 
   async requestCandidates<T>(paths: string[], options: RequestOptions = {}): Promise<T> {
@@ -242,11 +260,11 @@ export class ApiClient {
     throw lastError ?? new ApiError('接口不可用', 404);
   }
 
-  async login(phone: string, password: string): Promise<AuthSession> {
-    const value = await this.request<unknown>('/auth/practitioner-login', {
+  async login(phone: string, password: string, role?: 'DOCTOR' | 'NUTRITIONIST' | 'HEALTH_MANAGER' | 'EXERCISE_COACH'): Promise<AuthSession> {
+    const value = await this.request<unknown>(role ? '/auth/login' : '/auth/practitioner-login', {
       method: 'POST',
       authenticated: false,
-      body: { phone, password },
+      body: { phone, password, ...(role ? { role } : {}) },
     });
     return normalizeSession(value);
   }
@@ -274,8 +292,12 @@ export class ApiClient {
     return this.request<ManagedUser>('/admin/users', { method: 'POST', body: input });
   }
 
-  updateManagedUser(id: string, input: { displayName?: string; role?: UserRole; status?: UserStatus }): Promise<ManagedUser> {
+  updateManagedUser(id: string, input: { displayName?: string; role?: UserRole; status?: Exclude<UserStatus, 'DELETED'> }): Promise<ManagedUser> {
     return this.request<ManagedUser>(`/admin/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: input });
+  }
+
+  deleteManagedUser(id: string): Promise<{ deleted: boolean; sessionsRevoked: boolean }> {
+    return this.request(`/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
   resetManagedUserPassword(id: string, newPassword: string): Promise<{ reset: boolean; sessionsRevoked: boolean }> {

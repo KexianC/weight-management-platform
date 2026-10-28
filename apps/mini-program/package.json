@@ -44,7 +44,11 @@
     "check:navigation": "node scripts/check-navigation-safe-area.mjs",
     "check:care-summaries": "node scripts/check-care-summaries.mjs",
     "check:business-logic": "node scripts/check-business-logic.mjs",
-    "test": "npm run check:routes && npm run check:media && npm run check:brand && npm run check:icons && npm run check:roles && npm run check:h5-auth && npm run check:h5-layout && npm run check:navigation && npm run check:care-summaries && npm run check:business-logic"
+    "test": "npm run check:routes && npm run check:media && npm run check:brand && npm run check:icons && npm run check:roles && npm run check:h5-auth && npm run check:h5-layout && npm run check:navigation && npm run check:care-summaries && npm run check:business-logic",
+    "typecheck": "node scripts/typecheck.mjs",
+    "test:workflows": "node scripts/check-patient-records.mjs && node scripts/check-diet-batch.mjs && node scripts/check-session-tabbar.mjs && node scripts/check-patient-reports.mjs && node src/pages/doctor/managed-care.test.mjs && node scripts/check-api-session-media.mjs && node scripts/check-nutrition-dashboard.mjs",
+    "build:h5:local": "node scripts/build-local-h5.mjs",
+    "preview:h5:local": "node scripts/preview-local-h5.mjs"
   },
   "dependencies": {
     "@dcloudio/uni-app": "3.0.0-5020420260813002",

@@ -106,6 +106,7 @@ if (new Set(secrets).size !== secrets.length) errors.push('JWT, SMS, media, and 
 requireValue('JWT_ISSUER');
 requireValue('JWT_AUDIENCE');
 requireHttpsUrl('API_PUBLIC_URL');
+requireHttpsUrl('PATIENT_APP_URL');
 
 const corsOrigins = requireValue('CORS_ORIGINS')
   .split(',')
@@ -186,7 +187,6 @@ if (envFilePath) {
   const repositoryRoot = dirname(envFilePath);
   const publicFiles = [
     ['apps/clinician-admin/.env.production', false],
-    ['apps/patient-mobile/.env.production', false],
     ['apps/mini-program/.env.production', true],
   ];
   for (const [relativePath, needsStorage] of publicFiles) {

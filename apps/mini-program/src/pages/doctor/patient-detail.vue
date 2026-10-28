@@ -1,5 +1,5 @@
 <template>
-	<view class="detail-page">
+	<NutritionistClient ref="nutritionistClient" v-if="nutritionistView" :patient-id="patientId" :active-revision="activeRevision" :page-active="pageActive" /><view v-else class="detail-page">
 		<view v-if="loading" class="state-card">
 			<view class="clinical-loading-spinner"></view>
 			<text>正在加载患者资料…</text>
@@ -41,7 +41,7 @@
 
 			<view class="section-card">
 				<view class="section-header">
-					<text class="section-title">照护概况</text>
+					<text class="section-title">服务概况</text>
 					<text class="section-note">最近记录 {{ formatDate(patient.lastRecordDate) }}</text>
 				</view>
 				<view class="summary-list">
@@ -104,12 +104,17 @@
 
 <script>
 import store from '../../store/index.js'
+import NutritionistClient from './NutritionistClient.vue'
+import { isNutritionist } from '../../utils/managed-care.js'
 import { getPatientDetail } from '../../utils/api.js'
 
 export default {
+	components: { NutritionistClient },
 	data() {
 		return {
 			patientId: '',
+			activeRevision: 0,
+			pageActive: false,
 			fallbackName: '',
 			patient: null,
 			loading: true,
@@ -117,6 +122,7 @@ export default {
 		}
 	},
 	computed: {
+		nutritionistView() { return isNutritionist(store.getUserInfo() || {}) },
 		avatarText() {
 			return String(this.patient?.name || this.fallbackName || '?').slice(0, 1)
 		},
@@ -155,8 +161,11 @@ export default {
 			this.errorMessage = '缺少患者标识，请返回患者列表后重试'
 			return
 		}
-		this.loadPatient()
+		if (!this.nutritionistView) this.loadPatient()
 	},
+	onShow() { this.pageActive = true; this.activeRevision++ },
+	onHide() { this.pageActive = false; this.$refs.nutritionistClient?.suspend() },
+	onUnload() { this.pageActive = false; this.$refs.nutritionistClient?.suspend() },
 	methods: {
 		async loadPatient() {
 			this.loading = true
@@ -254,4 +263,13 @@ export default {
 .primary-button { color: #fff; background: #2e86ab; }
 .secondary-button { color: #216e8e; background: #edf7fa; }
 button::after { border: 0; }
+</style>
+
+<style scoped>
+/* Narrow-screen action spacing and reachable controls. */
+.detail-page button { min-height: 44px; height: auto; display: flex; align-items: center; justify-content: center; padding: 10px 14px; line-height: 1.5; font-size: 14px; }
+.detail-page .action-bar { gap: 12px; }
+.detail-page { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+.detail-page .name-row { flex-wrap: wrap; }
+.detail-page .patient-name { overflow-wrap: anywhere; }
 </style>

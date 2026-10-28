@@ -4,10 +4,12 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
 import { ClinicalService } from './clinical';
 import { PrismaService } from './prisma.service';
+import { YuanqizhanRemindersService } from './yuanqizhan-reminders';
 
 @Injectable()
 export class RemindersService {
-  constructor(private readonly prisma: PrismaService, private readonly clinical: ClinicalService) {}
+  constructor(private readonly prisma: PrismaService, private readonly clinical: ClinicalService,
+    private readonly yuanqizhan: YuanqizhanRemindersService) {}
 
   private async createReminder(followUpId: string, actorId?: string) {
     const follow = await this.prisma.followUp.findUnique({
@@ -18,10 +20,20 @@ export class RemindersService {
     const existing = await this.prisma.notification.findFirst({
       where: { userId: follow.patientId, relatedType: 'FOLLOW_UP_REMINDER', relatedId: follow.id },
     });
-    if (existing) return { sent: false, duplicate: true, notificationId: existing.id };
-    let notification: { id: string };
-    try {
+    const existingMetadata = existing?.metadata && typeof existing.metadata === 'object' && !Array.isArray(existing.metadata)
+      ? existing.metadata as Record<string, unknown>
+      : {};
+    const previousDeliveryState = String(existingMetadata.externalDeliveryState ?? 'PENDING');
+    if (existing && (previousDeliveryState === 'DELIVERED'
+      || (previousDeliveryState === 'NOT_CONFIGURED' && !process.env.REMINDER_DELIVERY_WEBHOOK_URL))) {
+      return { sent: false, duplicate: true, notificationId: existing.id, externalDeliveryState: previousDeliveryState };
+    }
+    let notification: { id: string; metadata?: Prisma.JsonValue | null };
+    if (existing) {
+      notification = existing;
+    } else try {
       notification = await this.prisma.$transaction(async (tx) => {
+        const pastDue = follow.scheduledAt.getTime() <= Date.now();
         const created = await tx.notification.create({
           data: {
             id: `follow-reminder:${follow.id}`,
@@ -29,10 +41,11 @@ export class RemindersService {
             type: 'FOLLOW_UP',
             priority: follow.priority,
             title: '随访时间提醒',
-            content: `${follow.practitioner.displayName}安排的随访将在 ${follow.scheduledAt.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })} 进行。`,
+            content: `${follow.practitioner.displayName}安排的随访${pastDue ? '原定于' : '将在'} ${follow.scheduledAt.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })} 进行。`,
             relatedType: 'FOLLOW_UP_REMINDER',
             relatedId: follow.id,
             actionPath: `/pages/patient/follow?followUpId=${follow.id}`,
+            metadata: { externalDeliveryState: 'PENDING', externalAttempts: 0 },
           },
         });
         await tx.auditLog.create({
@@ -42,18 +55,29 @@ export class RemindersService {
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        return { sent: false, duplicate: true, notificationId: `follow-reminder:${follow.id}` };
+        const raced = await this.prisma.notification.findUnique({ where: { id: `follow-reminder:${follow.id}` } });
+        if (!raced) throw error;
+        notification = raced;
+      } else {
+        throw error;
       }
-      throw error;
     }
-    await this.deliverExternal({
+    const externalDeliveryState = await this.deliverExternal({
       phone: follow.patient.phone,
       patientName: follow.patient.displayName,
       practitionerName: follow.practitioner.displayName,
       scheduledAt: follow.scheduledAt.toISOString(),
       followUpId: follow.id,
     });
-    return { sent: true, notificationId: notification.id };
+    const metadata = notification.metadata && typeof notification.metadata === 'object' && !Array.isArray(notification.metadata)
+      ? notification.metadata as Record<string, unknown>
+      : {};
+    const externalAttempts = Number(metadata.externalAttempts ?? 0) + (externalDeliveryState === 'NOT_CONFIGURED' ? 0 : 1);
+    await this.prisma.notification.update({
+      where: { id: notification.id },
+      data: { metadata: { ...metadata, externalDeliveryState, externalAttempts, externalLastAttemptAt: new Date().toISOString() } },
+    });
+    return { sent: !existing, duplicate: Boolean(existing), notificationId: notification.id, externalDeliveryState };
   }
 
   async manual(req: Request, followUpId: string) {
@@ -67,16 +91,17 @@ export class RemindersService {
 
   async run(req: Request) {
     this.assertCronSecret(req.headers['x-cron-secret']);
-    const from = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const yuanqizhan = await this.yuanqizhan.run();
+    const from = new Date();
     const to = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const rows = await this.prisma.followUp.findMany({
-      where: { status: { in: ['SCHEDULED', 'IN_PROGRESS', 'OVERDUE'] }, scheduledAt: { gte: from, lte: to } },
+      where: { status: 'SCHEDULED', scheduledAt: { gte: from, lte: to } },
       select: { id: true },
       take: 1000,
     });
     const results = [];
     for (const row of rows) results.push(await this.createReminder(row.id));
-    return { scanned: rows.length, sent: results.filter((item) => item.sent).length, results };
+    return { scanned: rows.length, sent: results.filter((item) => item.sent).length, results, yuanqizhan };
   }
 
   private assertCronSecret(value: string | string[] | undefined) {
@@ -87,9 +112,9 @@ export class RemindersService {
     if (!timingSafeEqual(expected, received)) throw new ForbiddenException('提醒任务鉴权失败');
   }
 
-  private async deliverExternal(payload: Record<string, string>) {
+  private async deliverExternal(payload: Record<string, string>): Promise<'NOT_CONFIGURED' | 'DELIVERED' | 'FAILED'> {
     const endpoint = process.env.REMINDER_DELIVERY_WEBHOOK_URL;
-    if (!endpoint) return;
+    if (!endpoint) return 'NOT_CONFIGURED';
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -101,8 +126,9 @@ export class RemindersService {
     }).catch(() => null);
     if (!response?.ok) {
       // In-app reminders remain durable even when an optional SMS/WeChat adapter is unavailable.
-      return;
+      return 'FAILED';
     }
+    return 'DELIVERED';
   }
 }
 

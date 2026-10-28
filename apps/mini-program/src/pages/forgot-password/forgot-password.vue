@@ -26,9 +26,9 @@
 			<view class="header-section">
 				<view class="brand-lockup">
 					<view class="brand-mark">
-						<image class="brand-logo" src="/static/logo.png" mode="aspectFit"></image>
+						<image class="brand-logo" src="/static/logo.png" alt="MedTalent健康数字助手" aria-label="MedTalent健康数字助手" mode="aspectFit"></image>
 					</view>
-					<text class="brand-name">数字减重助手</text>
+					<text class="brand-name">MedTalent健康数字助手</text>
 				</view>
 				<view class="icon-container">
 					<Icon name="System/lock-password-line.svg" size="40" color="$primary-color" />
@@ -870,7 +870,7 @@
 		display: block;
 	}
 
-	/* 数字减重助手：蓝白临床视觉 */
+	/* MedTalent健康数字助手：蓝白临床视觉 */
 	.forgot-password-container {
 		background: linear-gradient(180deg, #236f8e 0%, #4b9fba 34%, #eaf5f9 34%, #f7fbfd 100%);
 		overflow-x: hidden;
@@ -984,4 +984,14 @@
 		border-radius: 16rpx;
 		box-shadow: 0 10rpx 24rpx rgba(46, 134, 171, 0.26);
 	}
+</style>
+
+<style scoped>
+/* Final touch target audit: layout only. */
+.next-btn { min-height: 44px; height: auto; display: flex; align-items: center; justify-content: center; line-height: 1.5; padding: 10px 14px; }
+</style>
+
+<style scoped>
+/* Interactive view touch targets: layout only. */
+.navbar-left { min-width: 44px; min-height: 44px; flex-shrink: 0; }
 </style>

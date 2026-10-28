@@ -3,9 +3,9 @@
 		<view class="test-header">
 			<view class="brand-lockup">
 				<view class="brand-mark">
-					<image class="brand-logo" src="/static/logo.png" mode="aspectFit"></image>
+					<image class="brand-logo" src="/static/logo.png" alt="MedTalent健康数字助手" aria-label="MedTalent健康数字助手" mode="aspectFit"></image>
 				</view>
-				<text class="brand-name">数字减重助手</text>
+				<text class="brand-name">MedTalent健康数字助手</text>
 			</view>
 			<view class="test-title-row">
 				<Icon name="Device/cpu-line.svg" size="24" color="$primary-color" />

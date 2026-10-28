@@ -1,0 +1,51 @@
+@import "../../styles/patient-theme.scss";
+.patient-home { padding: 0 0 calc(130rpx + env(safe-area-inset-bottom)); background: #f4f7fb; color: #08163d; }
+.patient-home .home-hero { padding: 0; background: white; }
+.patient-home .brand-row { min-height: 142rpx; padding: 14rpx 40rpx; }
+.patient-home .brand-logo { width: 100rpx; height: 104rpx; flex: none; margin-right: 20rpx; }
+.patient-home .brand-name { white-space: normal; font-size: 30rpx; line-height: 1.35; color: #08163d; letter-spacing: 0; }
+.patient-home .greeting-row { display: flex; align-items: flex-start; flex-direction: column; justify-content: center; gap: 20rpx; min-height: 260rpx; padding: 42rpx 40rpx; margin: 0; background: #f5faff url('../../static/brand/third-wave.webp') no-repeat right center; background-size: cover; }
+.patient-home .greeting-date { font-size: 28rpx; color: #617091; margin: 0; }
+.patient-home .greeting-title { max-width: 100%; font-size: 55rpx; line-height: 1.4; color: #07163d; white-space: normal; letter-spacing: 1rpx; }
+.patient-home .task-section { margin: 0 0 16rpx; background: white; padding: 26rpx 36rpx 14rpx; }
+.patient-home .section-heading-row { padding: 0; margin: 0; min-height: 72rpx; }
+.patient-home .section-heading { font-size: 39rpx; font-weight: 700; color: #08163d; line-height: 1.4; }
+.patient-home .section-link { min-height: 44px; padding: 0; gap: 6rpx; font-size: 26rpx; color: #617091; margin: 0; }
+.patient-home .task-card { padding: 0; background: white; }
+.patient-home .task-row { padding: 28rpx 0; min-height: 164rpx; gap: 24rpx; border-color: #e3e8f2; }
+.patient-home .task-icon-box { width: 96rpx; height: 96rpx; flex: none; margin: 0; border-radius: 24rpx; background: #edf3ff; }
+.patient-home .task-icon-box.cyan, .patient-home .shortcut-icon.cyan { background: #e8f9fa; }
+.patient-home .task-title { font-size: 32rpx; line-height: 1.45; color: #08163d; font-weight: 650; margin: 0; }
+.patient-home .task-desc { font-size: 25rpx; line-height: 1.55; color: #63718e; margin-top: 8rpx; white-space: normal; }
+.patient-home .task-cta { flex: none; align-self: center; width: 148rpx; min-width: 64px; min-height: 44px; padding: 0 12rpx; margin: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #2b5fff; border-radius: 12rpx; background: #2b5fff; color: #fff; font-size: 29rpx; line-height: 1.5; box-shadow: none; }
+.patient-home .task-cta.secondary { color: #2b5fff; background: #fff; }
+.patient-home .task-cta.completed { color: #52627a; background: #eef2f6; border-color: #d9e1eb; }
+.patient-home .record-shortcuts { background: white; padding: 30rpx 36rpx 0; margin-bottom: 20rpx; }
+.patient-home .shortcut-grid { display: flex; padding: 24rpx 0; }
+.patient-home .shortcut-item { display: flex; align-items: center; justify-content: flex-start; flex: 1; min-width: 0; min-height: 114rpx; gap: 16rpx; font-size: 28rpx; }
+.patient-home .shortcut-item + .shortcut-item { padding-left: 24rpx; margin-left: 18rpx; border-left: 1px solid #e3e8f2; }
+.patient-home .shortcut-item > text { white-space: nowrap; }
+.patient-home .shortcut-icon { width: 88rpx; height: 88rpx; display: flex; flex: none; align-items: center; justify-content: center; background: #edf3ff; border-radius: 50%; }
+.patient-home .report-shortcut { display: flex; align-items: center; gap: 24rpx; min-height: 176rpx; border-top: 1px solid #e3e8f2; padding: 26rpx 0; }
+.patient-home .clinical-card { margin: 20rpx 28rpx; border: 1px solid #e3e8f2; border-radius: 16rpx; box-shadow: none; }
+.patient-home .yuanqizhan-section { margin: 0 0 20rpx; padding: 26rpx 36rpx 0; }
+.patient-home .yuanqizhan-section > .section-heading { display: block; margin: 0 0 20rpx; }
+.patient-home .yuanqizhan-section .yuanqizhan-entry { margin: 0 0 16rpx; padding: 24rpx; gap: 20rpx; }
+.patient-home .yuanqizhan-entry .task-copy { flex: 1; min-width: 0; padding-right: 0; }
+.patient-home .yuanqizhan-entry .task-title { white-space: normal; overflow-wrap: anywhere; }
+.patient-home .yuanqizhan-entry .task-cta { flex-shrink: 0; min-height: 44px; white-space: nowrap; }
+.patient-home .yuanqizhan-section .yuanqizhan-feedback { display: flex; align-items: center; gap: 20rpx; margin: 0 0 16rpx; padding: 24rpx; font-size: 26rpx; line-height: 1.5; color: #345565; }
+.patient-home .yuanqizhan-feedback > text { flex: 1; min-width: 0; }
+.patient-home .yuanqizhan-feedback .yuanqizhan-retry { flex-shrink: 0; min-height: 44px; margin: 0; white-space: normal; }
+.patient-home .weight-primary-card { margin-top: 30rpx; }
+.patient-home .primary-record-button { background: #2b5fff; box-shadow: none; border-radius: 12rpx; }
+.patient-home .weight-number { color: #2b5fff; }
+.patient-home .heading-title, .patient-home .metric-value { color: #15264c; }
+.patient-home .metric-strip { background: #f3f6fc; border-radius: 12rpx; }
+.patient-home .care-reminder { padding: 26rpx; display: flex; align-items: center; gap: 22rpx; }
+.patient-home .care-reminder .task-icon-box { width: 72rpx; height: 72rpx; }
+.patient-home .quick-actions, .patient-home .recent-notifications { margin: 28rpx; }
+.patient-home .quick-actions .clinical-card, .patient-home .recent-notifications .clinical-card { margin: 16rpx 0; }
+.patient-home .quick-actions .section-heading, .patient-home .recent-notifications .section-heading { font-size: 32rpx; }
+.patient-home .mini-baseline { background: #b8c9ff; }.patient-home .mini-point { background: #2b5fff; }
+@media(max-width:350px) { .patient-home .task-row { gap: 16rpx; }.patient-home .task-icon-box { width: 80rpx; height: 80rpx; }.patient-home .task-title { font-size: 30rpx; }.patient-home .task-desc { font-size: 12px; }.patient-home .shortcut-item { gap: 10rpx; font-size: 27rpx; }.patient-home .shortcut-item + .shortcut-item { padding-left: 14rpx; margin-left: 10rpx; }.patient-home .shortcut-icon { width: 72rpx; height: 72rpx; } }

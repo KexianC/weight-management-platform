@@ -9,6 +9,10 @@ async function bootstrap() {
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.setGlobalPrefix('api/v1');
   app.use(helmet());
+  app.use((_req: unknown, res: { setHeader: (name: string, value: string) => void }, next: () => void) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    next();
+  });
   const allowedOrigins = (process.env.CORS_ORIGINS
     ?? 'http://localhost:4173,http://127.0.0.1:4173,http://localhost:4174,http://127.0.0.1:4174,http://localhost:4175,http://127.0.0.1:4175,http://localhost:5173,http://127.0.0.1:5173')
     .split(',')
@@ -22,6 +26,6 @@ async function bootstrap() {
     transformOptions: { enableImplicitConversion: true },
   }));
   app.enableShutdownHooks();
-  await app.listen(Number(process.env.PORT ?? 3000), '0.0.0.0');
+  await app.listen(Number(process.env.PORT ?? 3000), process.env.API_BIND_ADDRESS ?? '0.0.0.0');
 }
 void bootstrap();

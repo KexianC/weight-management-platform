@@ -21,6 +21,7 @@ import type { Request } from 'express';
 import { Prisma } from '@prisma/client';
 import { ClinicalService } from './clinical';
 import { assertFollowUpTransition, type FollowState } from './domain';
+import { businessProjection } from './business-projection';
 import { PrismaService } from './prisma.service';
 
 const followTypes = ['WEIGHT', 'DIET', 'EXERCISE', 'MEDICATION', 'QUESTIONNAIRE', 'GENERAL', 'OFFLINE', 'PHONE'] as const;
@@ -81,7 +82,46 @@ export const followUpId = (practitionerId: string, patientId: string, type: stri
     .update(`${practitionerId}\u0000${patientId}\u0000${type}\u0000${scheduledAt.toISOString()}`)
     .digest('hex')}`;
 
-function recurrenceDates(base: Date, rule?: Record<string, unknown>) {
+function addCalendarDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+const isoInShanghai = (value: Date | null | undefined) => {
+  if (!value) return value;
+  return new Date(value.getTime() + SHANGHAI_OFFSET_MS).toISOString().replace('Z', '+08:00');
+};
+
+type FollowUpDateRow = {
+  scheduledAt: Date;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+  cancelledAt?: Date | null;
+};
+
+export function followUpView<T extends FollowUpDateRow>(row: T) {
+  return {
+    ...businessProjection(row),
+    scheduledTime: isoInShanghai(row.scheduledAt),
+    ...(row.startedAt === undefined ? {} : { startedAt: isoInShanghai(row.startedAt) }),
+    ...(row.completedAt === undefined ? {} : { completedAt: isoInShanghai(row.completedAt) }),
+    ...(row.cancelledAt === undefined ? {} : { cancelledAt: isoInShanghai(row.cancelledAt) }),
+  };
+}
+
+function addMonthsClamped(date: Date, months: number, preferredDay: number) {
+  const next = new Date(date.getTime() + SHANGHAI_OFFSET_MS);
+  next.setUTCDate(1);
+  next.setUTCMonth(next.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate();
+  next.setUTCDate(Math.min(preferredDay, lastDay));
+  return new Date(next.getTime() - SHANGHAI_OFFSET_MS);
+}
+
+export function recurrenceDates(base: Date, rule?: Record<string, unknown>) {
   if (!rule || Object.keys(rule).length === 0 || ['none', 'once', 'single'].includes(String(rule.type ?? rule.frequency ?? '').toLowerCase())) return [base];
   const custom = rule.customDates ?? rule.dates;
   if (Array.isArray(custom) && custom.length) {
@@ -93,13 +133,14 @@ function recurrenceDates(base: Date, rule?: Record<string, unknown>) {
   const endAt = rule.endDate ? new Date(String(rule.endDate)) : null;
   const dates: Date[] = [];
   let cursor = new Date(base);
+  const monthlyDay = new Date(base.getTime() + SHANGHAI_OFFSET_MS).getUTCDate();
   for (let index = 0; index < count; index += 1) {
     if (endAt && cursor > endAt) break;
     dates.push(new Date(cursor));
-    if (frequency === 'daily') cursor.setDate(cursor.getDate() + 1);
-    else if (frequency === 'biweekly') cursor.setDate(cursor.getDate() + 14);
-    else if (frequency === 'monthly') cursor.setMonth(cursor.getMonth() + 1);
-    else cursor.setDate(cursor.getDate() + 7);
+    if (frequency === 'daily') cursor = addCalendarDays(cursor, 1);
+    else if (frequency === 'biweekly') cursor = addCalendarDays(cursor, 14);
+    else if (frequency === 'monthly') cursor = addMonthsClamped(cursor, 1, monthlyDay);
+    else cursor = addCalendarDays(cursor, 7);
   }
   return dates;
 }
@@ -108,25 +149,31 @@ function recurrenceDates(base: Date, rule?: Record<string, unknown>) {
 export class FollowUpsService {
   constructor(private readonly prisma: PrismaService, private readonly clinical: ClinicalService) {}
 
-  private async rowForActor(req: Request, id: string) {
+  private async rowForActor(req: Request, id: string, readOnly = false) {
     const actor = await this.clinical.actor(req);
-    if (actor.role !== 'PATIENT') this.clinical.assertPractitioner(actor);
+    if (actor.role !== 'PATIENT' && actor.role !== 'HEALTH_MANAGER') this.clinical.assertPractitioner(actor);
     const row = await this.prisma.followUp.findUnique({
       where: { id },
-      include: { patient: { select: { id: true, displayName: true, avatarUrl: true } }, practitioner: { select: { id: true, displayName: true, avatarUrl: true, role: true } } },
+      include: { patient: { select: { id: true, displayName: true, avatarUrl: true } }, practitioner: { select: { id: true, displayName: true, avatarUrl: true, role: true, status: true } } },
     });
+    if (actor.role === 'HEALTH_MANAGER' && !readOnly) throw new ForbiddenException('健管师全量随访权限仅为只读');
+    if (row && actor.role === 'HEALTH_MANAGER' && readOnly) {
+      if (row.practitioner.status !== 'ACTIVE') throw new NotFoundException('随访不存在');
+      await this.clinical.assertCare(actor,row.patientId);
+      return {actor,row};
+    }
     if (!row || (actor.role === 'PATIENT' ? row.patientId !== actor.sub : row.practitionerId !== actor.sub)) throw new NotFoundException('随访不存在');
     return { actor, row };
   }
 
   async list(req: Request, query: FollowQueryDto) {
     const actor = await this.clinical.actor(req);
-    const baseWhere = actor.role === 'PATIENT' ? { patientId: actor.sub } : { practitionerId: actor.sub };
+    const baseWhere = actor.role === 'PATIENT' ? { patientId: actor.sub } : actor.role === 'HEALTH_MANAGER' ? { patient: { status: 'ACTIVE' as const }, practitioner: { status: 'ACTIVE' as const } } : { practitionerId: actor.sub };
     if (actor.role !== 'PATIENT') {
-      this.clinical.assertPractitioner(actor);
+      if (actor.role !== 'HEALTH_MANAGER') this.clinical.assertPractitioner(actor);
       if (query.patientId) await this.clinical.assertCare(actor, query.patientId);
     }
-    await this.prisma.followUp.updateMany({
+    if (actor.role !== 'HEALTH_MANAGER') await this.prisma.followUp.updateMany({
       where: { ...baseWhere, status: 'SCHEDULED', scheduledAt: { lt: new Date() } },
       data: { status: 'OVERDUE' },
     });
@@ -151,7 +198,7 @@ export class FollowUpsService {
       }),
       this.prisma.followUp.count({ where }),
     ]);
-    return { items, total, page: Number(query.page), pageSize: Number(query.pageSize) };
+    return { items: items.map(followUpView), total, page: Number(query.page), pageSize: Number(query.pageSize) };
   }
 
   async create(req: Request, dto: CreateFollowDto) {
@@ -220,7 +267,7 @@ export class FollowUpsService {
         await tx.auditLog.create({
           data: { actorId: actor.sub, action: 'FOLLOW_UP_CREATE', resourceType: 'FOLLOW_UP', resourceId: seriesId ?? rows[0]?.id, metadata: { patientIds, occurrences: dates.length, total: rows.length } },
         });
-        return { items: rows, total: rows.length, recurrenceSeriesId: seriesId };
+        return { items: rows.map(followUpView), total: rows.length, recurrenceSeriesId: seriesId };
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -231,7 +278,7 @@ export class FollowUpsService {
   }
 
   async detail(req: Request, id: string) {
-    return (await this.rowForActor(req, id)).row;
+    return followUpView((await this.rowForActor(req, id, true)).row);
   }
 
   async update(req: Request, id: string, dto: UpdateFollowDto) {
@@ -255,13 +302,13 @@ export class FollowUpsService {
       const updated = await tx.followUp.findUnique({ where: { id } });
       if (!updated) throw new NotFoundException('随访不存在');
       await tx.auditLog.create({ data: { actorId: actor.sub, action: 'FOLLOW_UP_UPDATE', resourceType: 'FOLLOW_UP', resourceId: id } });
-      return updated;
+      return followUpView(updated);
     });
   }
 
   async transition(req: Request, id: string, next: FollowState, dto: CompleteFollowDto = {}) {
     const { actor, row } = await this.rowForActor(req, id);
-    if (row.status === next) return row;
+    if (row.status === next) return followUpView(row);
     if (actor.role !== 'PATIENT') {
       this.clinical.assertPractitioner(actor);
     }
@@ -281,6 +328,21 @@ export class FollowUpsService {
         },
       });
       if (claimed.count !== 1) throw new ConflictException('随访状态已变化，请刷新后重试');
+      if (next === 'COMPLETED' && dto.result?.images !== undefined) {
+        const images = dto.result.images;
+        if (!Array.isArray(images) || images.length > 10) throw new BadRequestException('随访图片最多10张，须使用受控assetId');
+        const ids = images.map((image: any) => {
+          if (!image || typeof image !== 'object' || Array.isArray(image) || Object.keys(image).some(key=>key!=='assetId') || typeof image.assetId !== 'string' || !/^[A-Za-z0-9_-]{1,191}$/.test(image.assetId)) throw new BadRequestException('随访图片只能使用上传的assetId');
+          return image.assetId as string;
+        });
+        if (new Set(ids).size !== ids.length) throw new BadRequestException('随访图片不能重复');
+        for (const assetId of ids) {
+          const asset = await tx.mediaAsset.findUnique({where:{id:assetId}});
+          if (!asset || asset.ownerId !== actor.sub || asset.status !== 'READY' || !asset.mimeType.startsWith('image/') || asset.referenceId || asset.referenceType || asset.healthRecordId) throw new ForbiddenException('只可关联本人未绑定的随访图片');
+          const bound = await tx.mediaAsset.updateMany({where:{id:assetId,ownerId:actor.sub,status:'READY',referenceType:null,referenceId:null,healthRecordId:null},data:{referenceType:'FOLLOW_UP',referenceId:id,scope:'FOLLOW_UP_IMAGE'}});
+          if (bound.count !== 1) throw new ConflictException('随访图片已被绑定或删除，请重试');
+        }
+      }
       const updated = await tx.followUp.findUnique({ where: { id } });
       if (!updated) throw new NotFoundException('随访不存在');
       if (next === 'COMPLETED' && row.type === 'WEIGHT') {
@@ -313,7 +375,7 @@ export class FollowUpsService {
         },
       });
       await tx.auditLog.create({ data: { actorId: actor.sub, action: `FOLLOW_UP_${next}`, resourceType: 'FOLLOW_UP', resourceId: id } });
-      return updated;
+      return followUpView(updated);
     });
   }
 
@@ -331,9 +393,9 @@ export class FollowUpsService {
 
   async stats(req: Request, query: FollowQueryDto) {
     const actor = await this.clinical.actor(req);
-    const baseWhere = actor.role === 'PATIENT' ? { patientId: actor.sub } : { practitionerId: actor.sub };
+    const baseWhere = actor.role === 'PATIENT' ? { patientId: actor.sub } : actor.role === 'HEALTH_MANAGER' ? { patient: { status: 'ACTIVE' as const }, practitioner: { status: 'ACTIVE' as const } } : { practitionerId: actor.sub };
     if (actor.role !== 'PATIENT') {
-      this.clinical.assertPractitioner(actor);
+      if (actor.role !== 'HEALTH_MANAGER') this.clinical.assertPractitioner(actor);
       if (query.patientId) await this.clinical.assertCare(actor, query.patientId);
     }
     const scheduledAt = query.startAt || query.endAt ? {
@@ -346,13 +408,18 @@ export class FollowUpsService {
       ...(query.followType ? { type: query.followType } : {}),
       ...(scheduledAt ? { scheduledAt } : {}),
     };
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const startOfTomorrow = new Date(startOfToday);
-    startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+    const nowInShanghai = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const startOfToday = new Date(Date.UTC(nowInShanghai.getUTCFullYear(), nowInShanghai.getUTCMonth(), nowInShanghai.getUTCDate()) - 8 * 60 * 60 * 1000);
+    const startOfTomorrow = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+    const todayWhere = {
+      ...baseWhere,
+      ...(actor.role !== 'PATIENT' && query.patientId ? { patientId: query.patientId } : {}),
+      ...(query.followType ? { type: query.followType } : {}),
+      scheduledAt: { gte: startOfToday, lt: startOfTomorrow },
+    };
     const [groups, today] = await Promise.all([
       this.prisma.followUp.groupBy({ by: ['status'], where, _count: { _all: true } }),
-      this.prisma.followUp.count({ where: { ...baseWhere, scheduledAt: { gte: startOfToday, lt: startOfTomorrow } } }),
+      this.prisma.followUp.count({ where: todayWhere }),
     ]);
     return { today, ...Object.fromEntries(groups.map((group) => [group.status, group._count._all])) };
   }

@@ -12,6 +12,7 @@ import { RemindersController } from './reminders';
 import { PrismaService } from './prisma.service';
 import { TasksController } from './tasks';
 import { AdminController } from './admin';
+import { DietPlanTemplateAdminController, NutritionController } from './nutrition';
 
 const controllers = [
   HealthController,
@@ -26,6 +27,8 @@ const controllers = [
   MediaController,
   RemindersController,
   AdminController,
+  NutritionController,
+  DietPlanTemplateAdminController,
 ];
 
 function values(value: string | string[] | undefined) {
@@ -99,6 +102,11 @@ describe('API route manifest', () => {
     '0:admin/users',
     '4:admin/users/:id',
     '0:admin/audit-logs',
+    '0:diet-plan-templates',
+    '0:diet-plans',
+    '1:clinical/patients/:patientId/diet-plans',
+    '1:clinical/patients/:patientId/records/:recordId/review',
+    '1:admin/diet-plan-templates',
   ])('contains the required route %s', (route) => {
     expect(routes).toContain(route);
   });

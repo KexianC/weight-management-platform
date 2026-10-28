@@ -2,7 +2,7 @@
   <view class="content">
     <view class="brand-card">
       <view class="logo-shell">
-        <image class="logo" src="/static/logo.png" mode="aspectFit"></image>
+        <image class="logo" src="/static/logo.png" alt="MedTalent健康数字助手" aria-label="MedTalent健康数字助手" mode="aspectFit"></image>
       </view>
       <view class="text-area">
         <text class="title">{{ title }}</text>
@@ -16,7 +16,7 @@
 export default {
   data() {
     return {
-      title: '数字减重助手',
+      title: 'MedTalent健康数字助手',
     }
   },
   onLoad() {},

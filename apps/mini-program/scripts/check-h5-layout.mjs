@@ -14,9 +14,9 @@ const required = [
 const missing = required.filter((snippet) => !app.includes(snippet))
 const recordRequired = [
   'placeholder="请输入体重"',
-  'flex: 0 1 360rpx',
-  'width: 360rpx',
-  'max-width: calc(100% - 70rpx)',
+  '.row > input { flex: 1; min-width: 0; }',
+  'box-sizing: border-box; width: 100%;',
+  'env(safe-area-inset-bottom)',
 ]
 const recordMissing = recordRequired.filter((snippet) => !patientRecord.includes(snippet))
 

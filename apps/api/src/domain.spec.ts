@@ -14,9 +14,9 @@ describe('workflow domain rules', () => {
     expect(() => assertTaskTransition('PENDING', 'CANCELLED', 'PATIENT')).toThrow(ConflictException);
   });
 
-  it('uses the real requested reporting range', () => {
+  it('uses the requested reporting range at Shanghai midnight', () => {
     const now = new Date('2026-08-17T00:00:00.000Z');
-    expect(getRangeStart('30d', now).toISOString()).toBe('2026-07-19T00:00:00.000Z');
+    expect(getRangeStart('30d', now).toISOString()).toBe('2026-07-18T16:00:00.000Z');
   });
 
   it('estimates known foods by amount', () => {

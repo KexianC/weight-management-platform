@@ -3,9 +3,11 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Injectable,
+  NotFoundException,
   OnApplicationBootstrap,
   Param,
   Patch,
@@ -18,6 +20,7 @@ import * as argon2 from 'argon2';
 import {
   IsEnum,
   IsInt,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -29,6 +32,7 @@ import {
 import type { Request } from 'express';
 import { Type } from 'class-transformer';
 import { Actor, AdminLoginDto, AuthService } from './auth';
+import { practitionerPhoneKey } from './domain';
 import { PrismaService } from './prisma.service';
 
 const passwordOptions = {
@@ -108,11 +112,7 @@ class UpdateManagedUserDto {
   @IsOptional()
   displayName?: string;
 
-  @IsEnum(UserRole)
-  @IsOptional()
-  role?: UserRole;
-
-  @IsEnum(UserStatus)
+  @IsIn([UserStatus.ACTIVE, UserStatus.DISABLED])
   @IsOptional()
   status?: UserStatus;
 }
@@ -129,6 +129,7 @@ export class AdminBootstrapService implements OnApplicationBootstrap {
   constructor(private readonly prisma: PrismaService) {}
 
   async onApplicationBootstrap() {
+    if (process.env.RECONSTRUCTION_LOCAL_ONLY === 'true') return;
     const isProduction = process.env.NODE_ENV === 'production';
     const configuredUsername = process.env.DEFAULT_ADMIN_USERNAME?.trim();
     const configuredPassword = process.env.DEFAULT_ADMIN_PASSWORD;
@@ -173,16 +174,19 @@ export class AdminService {
 
   async summary(actor: Actor) {
     this.assertAdmin(actor);
-    const [totalUsers, activeUsers, auditLogs, byRole] = await Promise.all([
+    const [totalUsers, activeUsers, disabledUsers, deletedUsers, auditLogs, byRole] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { status: UserStatus.ACTIVE } }),
+      this.prisma.user.count({ where: { status: UserStatus.DISABLED } }),
+      this.prisma.user.count({ where: { status: UserStatus.DELETED } }),
       this.prisma.auditLog.count(),
       this.prisma.user.groupBy({ by: ['role'], _count: { _all: true } }),
     ]);
     return {
       totalUsers,
       activeUsers,
-      disabledUsers: totalUsers - activeUsers,
+      disabledUsers,
+      deletedUsers,
       auditLogs,
       usersByRole: Object.fromEntries(byRole.map((row) => [row.role, row._count._all])),
     };
@@ -214,6 +218,7 @@ export class AdminService {
           displayName: true,
           role: true,
           status: true,
+          deletedAt: true,
           lastLoginAt: true,
           createdAt: true,
           updatedAt: true,
@@ -229,14 +234,16 @@ export class AdminService {
 
   async createUser(actor: Actor, dto: CreateManagedUserDto) {
     this.assertAdmin(actor);
+    if (dto.role === UserRole.PATIENT) throw new ForbiddenException('客户账号请由健康管理师建档创建');
     const username = dto.username.trim().toLowerCase();
     if (dto.role !== UserRole.ADMIN && !phonePattern.test(username)) {
-      throw new BadRequestException('患者、医生和营养师账号必须使用有效手机号');
+      throw new BadRequestException('工作人员账号必须使用有效手机号');
     }
     try {
       const user = await this.prisma.user.create({
         data: {
           phone: username,
+          practitionerPhone: practitionerPhoneKey(dto.role, username),
           displayName: dto.displayName.trim(),
           role: dto.role,
           passwordHash: await argon2.hash(dto.password, passwordOptions),
@@ -247,6 +254,9 @@ export class AdminService {
       return user;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        if (dto.role === UserRole.DOCTOR || dto.role === UserRole.NUTRITIONIST) {
+          throw new ConflictException('该手机号已存在医生或营养师账号');
+        }
         throw new ConflictException('该登录账号已存在');
       }
       throw error;
@@ -255,42 +265,43 @@ export class AdminService {
 
   async updateUser(actor: Actor, userId: string, dto: UpdateManagedUserDto) {
     this.assertAdmin(actor);
-    if (actor.sub === userId && (dto.status === UserStatus.DISABLED || (dto.role && dto.role !== UserRole.ADMIN))) {
-      throw new ForbiddenException('不能停用当前管理员或移除自己的管理员角色');
+    if (dto.status !== undefined && dto.status !== UserStatus.ACTIVE && dto.status !== UserStatus.DISABLED) {
+      throw new BadRequestException('账号状态只能设置为正常或停用；删除请使用删除操作');
     }
-    const current = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    if (dto.role && dto.role !== UserRole.ADMIN && !phonePattern.test(current.phone)) {
-      throw new BadRequestException('非管理员角色必须使用有效手机号登录');
-    }
-    if (
-      current.role === UserRole.ADMIN &&
-      (dto.status === UserStatus.DISABLED || (dto.role && dto.role !== UserRole.ADMIN))
-    ) {
-      const activeAdmins = await this.prisma.user.count({ where: { role: UserRole.ADMIN, status: UserStatus.ACTIVE } });
-      if (activeAdmins <= 1) throw new ForbiddenException('系统必须至少保留一个启用的管理员');
+    if (actor.sub === userId && dto.status === UserStatus.DISABLED) {
+      throw new ForbiddenException('不能停用当前管理员');
     }
     try {
       const updated = await this.prisma.$transaction(async (tx) => {
-        const user = await tx.user.update({
-          where: { id: userId },
+        const current = await this.managedUser(tx, userId);
+        if (current.status === UserStatus.DELETED || current.deletedAt) throw new ConflictException('账号已删除，不能修改或重新启用');
+        if (dto.status === UserStatus.DISABLED) await this.protectLastAdmin(tx, current);
+        const disabling = dto.status === UserStatus.DISABLED && current.status !== UserStatus.DISABLED;
+        const changed = await tx.user.updateMany({
+          where: { id: userId, status: current.status, sessionVersion: current.sessionVersion, deletedAt: null },
           data: {
             displayName: dto.displayName?.trim(),
-            role: dto.role,
             status: dto.status,
-            disabledAt: dto.status === UserStatus.DISABLED ? new Date() : dto.status === UserStatus.ACTIVE ? null : undefined,
+            ...(disabling ? { sessionVersion: { increment: 1 } } : {}),
+            disabledAt: dto.status === UserStatus.DISABLED ? current.disabledAt ?? new Date() : dto.status === UserStatus.ACTIVE ? null : undefined,
           },
-          select: { id: true, phone: true, email: true, displayName: true, role: true, status: true, lastLoginAt: true, createdAt: true, updatedAt: true },
         });
-        if (dto.status === UserStatus.DISABLED || (dto.role && dto.role !== current.role)) {
+        if (changed.count !== 1) throw new ConflictException('账号状态已变化，请刷新后重试');
+        const user = await tx.user.findUniqueOrThrow({
+          where: { id: userId },
+          select: { id: true, phone: true, email: true, displayName: true, role: true, status: true, deletedAt: true, lastLoginAt: true, createdAt: true, updatedAt: true },
+        });
+        if (dto.status === UserStatus.DISABLED) {
           await tx.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
         }
         await tx.auditLog.create({
           data: { actorId: actor.sub, action: 'ADMIN_USER_UPDATE', resourceType: 'USER', resourceId: userId, metadata: dto as Prisma.InputJsonValue },
         });
         return user;
-      });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
       return updated;
     } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') throw new ConflictException('账号正在被修改，请刷新后重试');
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('该手机号已存在目标身份账号');
       }
@@ -301,11 +312,50 @@ export class AdminService {
   async resetPassword(actor: Actor, userId: string, dto: ResetManagedPasswordDto) {
     this.assertAdmin(actor);
     await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({ where: { id: userId }, data: { passwordHash: await argon2.hash(dto.newPassword, passwordOptions) } });
+      const current = await this.managedUser(tx, userId);
+      if (current.status === UserStatus.DELETED || current.deletedAt) throw new ConflictException('账号已删除，不能重置密码');
+      await tx.user.update({ where: { id: userId }, data: { passwordHash: await argon2.hash(dto.newPassword, passwordOptions), sessionVersion: { increment: 1 }, mustChangePassword: true, initialPasswordExpiresAt: new Date(Date.now() + 24 * 3600000) } });
       await tx.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
       await tx.auditLog.create({ data: { actorId: actor.sub, action: 'ADMIN_PASSWORD_RESET', resourceType: 'USER', resourceId: userId } });
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     return { reset: true, sessionsRevoked: true };
+  }
+
+  async deleteUser(actor: Actor, userId: string) {
+    this.assertAdmin(actor);
+    if (actor.sub === userId) throw new ForbiddenException('不能删除当前管理员');
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const current = await this.managedUser(tx, userId);
+        if (current.status === UserStatus.DELETED) return { deleted: true, sessionsRevoked: true };
+        await this.protectLastAdmin(tx, current);
+        const deletedAt = new Date();
+        const changed = await tx.user.updateMany({
+          where: { id: userId, status: current.status, sessionVersion: current.sessionVersion, deletedAt: null },
+          data: { status: UserStatus.DELETED, deletedAt, disabledAt: current.disabledAt ?? deletedAt, sessionVersion: { increment: 1 } },
+        });
+        if (changed.count !== 1) throw new ConflictException('账号状态已变化，请刷新后重试');
+        await tx.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: deletedAt } });
+        await tx.auditLog.create({ data: { actorId: actor.sub, action: 'ADMIN_USER_SOFT_DELETE', resourceType: 'USER', resourceId: userId,
+          metadata: { previousStatus: current.status, role: current.role, deletedAt: deletedAt.toISOString(), recordsPreserved: true } } });
+        return { deleted: true, sessionsRevoked: true };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') throw new ConflictException('账号正在被修改，请刷新后重试');
+      throw error;
+    }
+  }
+
+  private async managedUser(tx: Prisma.TransactionClient, userId: string) {
+    const current = await tx.user.findUnique({ where: { id: userId }, select: { id: true, role: true, status: true, disabledAt: true, deletedAt: true, sessionVersion: true } });
+    if (!current) throw new NotFoundException('账号不存在');
+    return current;
+  }
+
+  private async protectLastAdmin(tx: Prisma.TransactionClient, current: { role: UserRole; status: UserStatus }) {
+    if (current.role !== UserRole.ADMIN || current.status !== UserStatus.ACTIVE) return;
+    const activeAdmins = await tx.user.count({ where: { role: UserRole.ADMIN, status: UserStatus.ACTIVE } });
+    if (activeAdmins <= 1) throw new ForbiddenException('系统必须至少保留一个启用的管理员');
   }
 
   async listAuditLogs(actor: Actor, query: AuditQueryDto) {
@@ -373,6 +423,11 @@ export class AdminController {
   @Patch('users/:id')
   async updateUser(@Param('id') id: string, @Body() dto: UpdateManagedUserDto, @Req() req: Request) {
     return this.admin.updateUser(await this.auth.actor(req), id, dto);
+  }
+
+  @Delete('users/:id')
+  async deleteUser(@Param('id') id: string, @Req() req: Request) {
+    return this.admin.deleteUser(await this.auth.actor(req), id);
   }
 
   @Post('users/:id/reset-password')

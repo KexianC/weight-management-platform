@@ -1,191 +1,285 @@
 {
-	"pages": [
-		{
-			"path": "pages/splash/splash",
-			"style": {
-				"navigationBarTitleText": "启动页",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/login/login",
-			"style": {
-				"navigationBarTitleText": "登录",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/register/register",
-			"style": {
-				"navigationBarTitleText": "注册",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/patient-bind/patient-bind",
-			"style": {
-				"navigationBarTitleText": "医生/营养师绑定"
-			}
-		},
-		{
-			"path": "pages/patient/index",
-			"style": {
-				"navigationBarTitleText": "患者首页",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/doctor/index",
-			"style": {
-				"navigationBarTitleText": "医生/营养师首页",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/patient/record",
-			"style": {
-				"navigationBarTitleText": "数据记录"
-			}
-		},
-		{
-			"path": "pages/patient/report",
-			"style": {
-				"navigationBarTitleText": "健康报告"
-			}
-		},
-		{
-			"path": "pages/patient/profile",
-			"style": {
-				"navigationBarTitleText": "我的"
-			}
-		},
-		{
-			"path": "pages/patient/follow",
-			"style": {
-				"navigationBarTitleText": "随访任务"
-			}
-		},
-		{
-			"path": "pages/patient/follow-record",
-			"style": {
-				"navigationBarTitleText": "随访记录详情"
-			}
-		},
-		{
-			"path": "pages/doctor/dashboard",
-			"style": {
-				"navigationBarTitleText": "医生/营养师工作台"
-			}
-		},
-		{
-			"path": "pages/doctor/patients",
-			"style": {
-				"navigationBarTitleText": "患者管理"
-			}
-		},
-		{
-			"path": "pages/doctor/patient-detail",
-			"style": {
-				"navigationBarTitleText": "患者详情"
-			}
-		},
-		{
-			"path": "pages/doctor/follow",
-			"style": {
-				"navigationBarTitleText": "随访管理"
-			}
-		},
-		{
-			"path": "pages/doctor/follow-add",
-			"style": {
-				"navigationBarTitleText": "添加随访"
-			}
-		},
-		{
-			"path": "pages/doctor/follow-record",
-			"style": {
-				"navigationBarTitleText": "随访记录"
-			}
-		},
-
-		{
-			"path": "pages/common/messages",
-			"style": {
-				"navigationBarTitleText": "留言对话",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/test/ai-test",
-			"style": {
-				"navigationBarTitleText": "AI卡路里测试"
-			}
-		},
-		{
-			"path": "pages/agreement/user-agreement",
-			"style": {
-				"navigationBarTitleText": "用户协议",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/agreement/privacy-policy",
-			"style": {
-				"navigationBarTitleText": "隐私政策",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/forgot-password/forgot-password",
-			"style": {
-				"navigationBarTitleText": "忘记密码",
-				"navigationStyle": "custom"
-			}
-		}
-	],
-	"globalStyle": {
-		"navigationBarTextStyle": "black",
-		"navigationBarTitleText": "数字减重助手",
-		"navigationBarBackgroundColor": "#F4F9FB",
-		"backgroundColor": "#F4F9FB"
-	},
-	"tabBar": {
-		"color": "#9CA3AF",
-		"selectedColor": "#2E86AB",
-		"borderStyle": "white",
-		"backgroundColor": "#ffffff",
-		"list": [
-			{
-				"pagePath": "pages/patient/index",
-				"iconPath": "/static/tab-home.png",
-				"selectedIconPath": "/static/tab-home-current.png",
-				"text": "首页"
-			},
-			{
-				"pagePath": "pages/patient/record",
-				"iconPath": "/static/tab-record.png",
-				"selectedIconPath": "/static/tab-record-current.png",
-				"text": "数据记录"
-			},
-			{
-				"pagePath": "pages/patient/follow",
-				"iconPath": "/static/tab-task.png",
-				"selectedIconPath": "/static/tab-task-current.png",
-				"text": "随访任务"
-			},
-			{
-				"pagePath": "pages/patient/report",
-				"iconPath": "/static/tab-report.png",
-				"selectedIconPath": "/static/tab-report-current.png",
-				"text": "健康报告"
-			},
-			{
-				"pagePath": "pages/patient/profile",
-				"iconPath": "/static/tab-profile.png",
-				"selectedIconPath": "/static/tab-profile-current.png",
-				"text": "我的"
-			}
-		]
-	},
-	"uniIdRouter": {}
+  "pages": [
+    {
+      "path": "pages/splash/splash",
+      "style": {
+        "navigationBarTitleText": "启动页",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/shared-report/shared-report",
+      "style": {
+        "navigationBarTitleText": "健康报告"
+      }
+    },
+    {
+      "path": "pages/login/login",
+      "style": {
+        "navigationBarTitleText": "登录",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/register/register",
+      "style": {
+        "navigationBarTitleText": "注册",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/patient-bind/patient-bind",
+      "style": {
+        "navigationBarTitleText": "医生/营养师绑定"
+      }
+    },
+    {
+      "path": "pages/patient/index",
+      "style": {
+        "navigationBarTitleText": "患者首页",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/patient/yuanqizhan",
+      "style": {
+        "navigationBarTitleText": "元气盏活动打卡",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/doctor/index",
+      "style": {
+        "navigationBarTitleText": "医生/营养师首页",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/patient/record",
+      "style": {
+        "navigationBarTitleText": "数据记录"
+      }
+    },
+    {
+      "path": "pages/patient/report",
+      "style": {
+        "navigationBarTitleText": "健康报告"
+      }
+    },
+    {
+      "path": "pages/patient/profile",
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
+    },
+    {
+      "path": "pages/patient/follow",
+      "style": {
+        "navigationBarTitleText": "随访任务"
+      }
+    },
+    {
+      "path": "pages/patient/follow-record",
+      "style": {
+        "navigationBarTitleText": "随访记录详情"
+      }
+    },
+    {
+      "path": "pages/doctor/dashboard",
+      "style": {
+        "navigationBarTitleText": "医生/营养师工作台"
+      }
+    },
+    {
+      "path": "pages/doctor/patients",
+      "style": {
+        "navigationBarTitleText": "患者管理"
+      }
+    },
+    {
+      "path": "pages/doctor/patient-detail",
+      "style": {
+        "navigationBarTitleText": "患者详情"
+      }
+    },
+    {
+      "path": "pages/doctor/follow",
+      "style": {
+        "navigationBarTitleText": "随访管理"
+      }
+    },
+    {
+      "path": "pages/doctor/follow-add",
+      "style": {
+        "navigationBarTitleText": "添加随访"
+      }
+    },
+    {
+      "path": "pages/doctor/follow-record",
+      "style": {
+        "navigationBarTitleText": "随访记录"
+      }
+    },
+    {
+      "path": "pages/common/messages",
+      "style": {
+        "navigationBarTitleText": "留言对话",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/test/ai-test",
+      "style": {
+        "navigationBarTitleText": "AI卡路里测试"
+      }
+    },
+    {
+      "path": "pages/agreement/user-agreement",
+      "style": {
+        "navigationBarTitleText": "用户协议",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/agreement/privacy-policy",
+      "style": {
+        "navigationBarTitleText": "隐私政策",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/forgot-password/forgot-password",
+      "style": {
+        "navigationBarTitleText": "忘记密码",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/change-password/change-password",
+      "style": {
+        "navigationBarTitleText": "首次设置密码"
+      }
+    },
+    {
+      "path": "pages/health-manager/index",
+      "style": {
+        "navigationBarTitleText": "健管师工作台"
+      }
+    },
+    {
+      "path": "pages/health-manager/clients",
+      "style": {
+        "navigationBarTitleText": "客户管理"
+      }
+    },
+    {
+      "path": "pages/health-manager/enroll",
+      "style": {
+        "navigationBarTitleText": "客户建档"
+      }
+    },
+    {
+      "path": "pages/health-manager/client",
+      "style": {
+        "navigationBarTitleText": "客户档案"
+      }
+    },
+    {
+      "path": "pages/health-manager/records",
+      "style": {
+        "navigationBarTitleText": "业务记录"
+      }
+    },
+    {
+      "path": "pages/health-manager/reports",
+      "style": {
+        "navigationBarTitleText": "报告与资料"
+      }
+    },
+    {
+      "path": "pages/exercise-coach/index",
+      "style": {
+        "navigationBarTitleText": "运动老师工作台"
+      }
+    },
+    {
+      "path": "pages/exercise-coach/clients",
+      "style": {
+        "navigationBarTitleText": "分配客户"
+      }
+    },
+    {
+      "path": "pages/exercise-coach/client",
+      "style": {
+        "navigationBarTitleText": "运动服务档案"
+      }
+    },
+    {
+      "path": "pages/exercise-coach/videos",
+      "style": {
+        "navigationBarTitleText": "动作视频库"
+      }
+    },
+    {
+      "path": "pages/exercise-coach/prescription",
+      "style": {
+        "navigationBarTitleText": "人工运动处方"
+      }
+    },
+    {
+      "path": "pages/staff/profile",
+      "style": {
+        "navigationBarTitleText": "工作人员信息"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "MedTalent健康数字助手",
+    "navigationBarBackgroundColor": "#F4F9FB",
+    "backgroundColor": "#F4F9FB"
+  },
+  "tabBar": {
+    "fontSize": "12px",
+    "iconWidth": "24px",
+    "height": "56px",
+    "spacing": "4px",
+    "color": "#52617D",
+    "selectedColor": "#2B5FFF",
+    "borderStyle": "white",
+    "backgroundColor": "#ffffff",
+    "list": [
+      {
+        "pagePath": "pages/patient/index",
+        "iconPath": "/static/tab-v3-home.png",
+        "selectedIconPath": "/static/tab-v3-home-current.png",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/patient/record",
+        "iconPath": "/static/tab-v3-record.png",
+        "selectedIconPath": "/static/tab-v3-record-current.png",
+        "text": "数据记录"
+      },
+      {
+        "pagePath": "pages/patient/follow",
+        "iconPath": "/static/tab-v3-task.png",
+        "selectedIconPath": "/static/tab-v3-task-current.png",
+        "text": "随访任务"
+      },
+      {
+        "pagePath": "pages/patient/report",
+        "iconPath": "/static/tab-v3-report.png",
+        "selectedIconPath": "/static/tab-v3-report-current.png",
+        "text": "健康报告"
+      },
+      {
+        "pagePath": "pages/patient/profile",
+        "iconPath": "/static/tab-v3-profile.png",
+        "selectedIconPath": "/static/tab-v3-profile-current.png",
+        "text": "我的"
+      }
+    ]
+  },
+  "uniIdRouter": {}
 }

@@ -1,0 +1,21 @@
+.patient-theme {
+  --patient-blue: #2b5fff;
+  --patient-cyan: #00adbe;
+  --patient-ink: #08163d;
+  --patient-muted: #5d6b8d;
+  --patient-line: #e3e8f2;
+  box-sizing: border-box;
+  color: var(--patient-ink);
+  background: #f4f7fb;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+.patient-theme view, .patient-theme text, .patient-theme input, .patient-theme textarea, .patient-theme button { box-sizing: border-box; }
+.patient-theme button { border-radius: 12rpx; font-weight: 500; min-height: 44px; }
+.patient-theme button::after { border: 0; }
+.patient-theme button[disabled] { opacity: .58; }
+.patient-theme button:focus-visible, .patient-theme [role="button"]:focus-visible { outline: 2px solid #2b5fff; outline-offset: 3px; }
+.patient-theme .empty, .patient-theme .empty-state { color: #63708c; line-height: 1.7; }
+.patient-theme .error, .patient-theme .report-error { color: #b13846; line-height: 1.65; overflow-wrap: anywhere; }
+.patient-theme .paragraph, .patient-theme .task-desc, .patient-theme .report-note, .patient-theme .menu-hint { overflow-wrap: anywhere; }
+
+.patient-theme button { display: flex; align-items: center; justify-content: center; line-height: 1.55; padding-top: 12rpx; padding-bottom: 12rpx; }

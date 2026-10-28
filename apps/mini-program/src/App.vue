@@ -1,98 +1,20 @@
 <script>
 	import store from './store/index.js'
-	
+	import { restorePatientTabBar } from './utils/tab-bar.js'
+
 	export default {
-		onLaunch: function() {
-			console.log('App Launch')
-			// 初始化store
+		onLaunch() {
 			store.init()
-			// 设置动态tabBar
-			this.setDynamicTabBar()
 		},
-		onShow: function() {
-			console.log('App Show')
-			// 每次显示时检查并更新tabBar
-			this.setDynamicTabBar()
-		},
-		onHide: function() {
-			console.log('App Hide')
-		},
-		methods: {
-			// 根据用户角色动态设置tabBar
-			setDynamicTabBar() {
-				const userInfo = store.getUserInfo()
-				if (!userInfo || !userInfo.role) return
-				
-				// 检查当前页面是否为TabBar页面
-				const pages = getCurrentPages()
-				if (pages.length === 0) return
-				
-				const currentPage = pages[pages.length - 1]
-				const currentRoute = currentPage.route
-				
-				// 患者端TabBar页面列表
-				const patientTabBarPages = [
-					'pages/patient/index',
-					'pages/patient/record',
-					'pages/patient/follow',
-					'pages/patient/report'
-				]
-				
-				// 医生端TabBar页面列表
-				const doctorTabBarPages = [
-					'pages/doctor/index',
-					'pages/doctor/patients',
-					'pages/doctor/follow',
-					'pages/doctor/dashboard'
-				]
-				
-				// 根据用户角色和当前页面设置TabBar显示
-				try {
-					uni.setTabBarStyle({
-						color: '#666666',
-						selectedColor: '#2E86AB',
-						backgroundColor: '#ffffff',
-						borderStyle: 'black'
-					})
-					
-					if (userInfo.role === 'doctor') {
-						// 医生端：隐藏患者端TabBar项，显示医生端TabBar项
-						for (let i = 0; i < 4; i++) {
-							uni.hideTabBarRedDot({ index: i })
-							uni.hideTabBar()
-						}
-						
-						// 显示医生端TabBar项
-						for (let i = 4; i < 8; i++) {
-							uni.showTabBar()
-						}
-						
-						// 如果当前在医生端页面，显示TabBar
-						if (doctorTabBarPages.includes(currentRoute)) {
-							uni.showTabBar()
-						}
-					} else {
-						// 患者端：隐藏医生端TabBar项，显示患者端TabBar项
-						for (let i = 4; i < 8; i++) {
-							uni.hideTabBarRedDot({ index: i })
-							uni.hideTabBar()
-						}
-						
-						// 如果当前在患者端页面，显示TabBar
-						if (patientTabBarPages.includes(currentRoute)) {
-							uni.showTabBar()
-						}
-					}
-				} catch (error) {
-					console.error('设置tabBar失败:', error)
-				}
-			}
+		onShow() {
+			// Return from WeChat background/camera without replacing the active page.
+			restorePatientTabBar(store.getUserInfo())
 		}
 	}
 </script>
 
 <style>
-	/* 数字减重助手全局视觉基线 */
+	/* MedTalent健康数字助手全局视觉基线 */
 	page,
 	body {
 		min-height: 100%;

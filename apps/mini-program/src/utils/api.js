@@ -1,8 +1,11 @@
 import { showToast, showLoading, hideLoading, getStorage } from './common.js'
-import { generateUploadPath, UPLOAD_PATHS, getImageUrl } from './config.js'
+import { UPLOAD_PATHS, getImageUrl } from './config.js'
+import { normalizeRecordPayload } from './record-model.js'
+import { resolveMediaFile } from './media-access.js'
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:3000/api/v1'
 const BASE_URL = String(import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, '')
+export const getApiBaseUrl = () => BASE_URL
 const TIMEOUT = 15000
 let authRedirectScheduled = false
 let refreshPromise = null
@@ -39,7 +42,8 @@ function normalizeResponse(body, statusCode = 200) {
 	}
 }
 
-function handleUnauthorized(message, options) {
+function handleUnauthorized(message, options, expectedToken) {
+	if (expectedToken && getStorage('token') !== expectedToken) return
 	uni.removeStorageSync('token')
 	uni.removeStorageSync('refreshToken')
 	uni.removeStorageSync('userInfo')
@@ -76,9 +80,12 @@ function refreshAccessToken() {
 			timeout: TIMEOUT,
 			success: (res) => {
 				if (!successfulCode(res.statusCode)) {
-					reject(new Error(errorMessage(res.data, res.statusCode)))
+					const error = new Error(errorMessage(res.data, res.statusCode))
+					error.statusCode = res.statusCode
+					reject(error)
 					return
 				}
+				if (getStorage('refreshToken') !== refreshToken) { reject(new Error('账号会话已变化，请重新加载')); return }
 				const payload = normalizeResponse(res.data, res.statusCode).data || {}
 				if (!payload.accessToken || !payload.refreshToken) {
 					reject(new Error('会话刷新响应无效'))
@@ -89,7 +96,7 @@ function refreshAccessToken() {
 				if (payload.user) uni.setStorageSync('userInfo', adaptUser(payload.user))
 				resolve(payload.accessToken)
 			},
-			fail: () => reject(new Error('会话刷新失败，请重新登录'))
+			fail: () => reject(new Error('会话刷新失败，请在网络恢复后重试'))
 		})
 	}).finally(() => {
 		refreshPromise = null
@@ -104,6 +111,7 @@ export function request(options = {}) {
 		if (useLoading) showLoading(options.loadingText || '请求中...')
 
 		const token = getStorage('token')
+		const requestAccount = getStorage('userInfo')?.userId || getStorage('userInfo')?.id
 		const header = {
 			'Content-Type': 'application/json',
 			Accept: 'application/json',
@@ -119,6 +127,7 @@ export function request(options = {}) {
 			timeout: options.timeout || TIMEOUT,
 			success: (res) => {
 				if (useLoading) hideLoading()
+				if (requestAccount !== (getStorage('userInfo')?.userId || getStorage('userInfo')?.id)) { reject(new Error('账号已切换，请重新加载')); return }
 				if (successfulCode(res.statusCode)) {
 					resolve(normalizeResponse(res.data, res.statusCode))
 					return
@@ -126,18 +135,19 @@ export function request(options = {}) {
 
 				const message = errorMessage(res.data, res.statusCode)
 				const authBootstrapRequest = /^\/auth\/(?:login|register|wechat\/login|sms(?:\/|$)|password\/reset|refresh)/.test(String(options.url || ''))
-				const canRefresh = res.statusCode === 401 && token && getStorage('refreshToken') && !options._authRetried && !authBootstrapRequest
+				const canRefresh = res.statusCode === 401 && getStorage('refreshToken') && !options._authRetried && !authBootstrapRequest
 				if (canRefresh) {
 					refreshAccessToken()
 						.then(() => request({ ...options, _authRetried: true, loading: false }))
 						.then(resolve)
 						.catch((refreshError) => {
-							handleUnauthorized(refreshError.message || message, options)
+							if (refreshError.statusCode === 401) handleUnauthorized(refreshError.message || message, options, token)
+						else if (options.showError !== false) showToast(refreshError.message || '网络恢复后请重试', 'none')
 							reject(refreshError)
 						})
 					return
 				}
-				if (res.statusCode === 401 && token && !authBootstrapRequest) handleUnauthorized(message, options)
+				if (res.statusCode === 401 && token && !authBootstrapRequest) handleUnauthorized(message, options, token)
 				else if (options.showError !== false) showToast(message, 'none')
 				const error = new Error(message)
 				error.statusCode = res.statusCode
@@ -286,7 +296,7 @@ function registrationPayload(data) {
 		challengeId: data.challengeId || storedChallenge(data.phone, purpose),
 		code: data.code || data.smsCode,
 		acceptedTerms: data.acceptedTerms ?? true,
-		consentVersion: data.consentVersion || '1.0',
+		consentVersion: data.consentVersion || '2026-10-13',
 		gender: data.gender ? String(data.gender).toUpperCase() : undefined,
 		birthDate: data.birthDate || birthDateFromAge(data.age),
 		heightCm: optionalNumber(data.heightCm ?? data.height),
@@ -322,11 +332,14 @@ function profilePayload(data) {
 	}).filter(([, value]) => value !== undefined && value !== ''))
 }
 
-export function upload(filePath, options = {}) {
+export async function upload(filePath, options = {}) {
+	// Refresh an expired camera-return session before sending bytes.
+	await get('/auth/me', {}, { loading: false, showError: options.showError })
 	return new Promise((resolve, reject) => {
 		const useLoading = options.loading !== false
 		if (useLoading) showLoading(options.loadingText || '上传中...')
 		const token = getStorage('token')
+		const uploadAccount = getStorage('userInfo')?.userId || getStorage('userInfo')?.id
 		const header = { ...options.header }
 		if (token) header.Authorization = `Bearer ${token}`
 
@@ -335,10 +348,12 @@ export function upload(filePath, options = {}) {
 			filePath,
 			name: options.name || 'file',
 			header,
-			formData: options.formData || {},
+			// Business endpoints bind uploaded asset ids. Upload accepts only optional scope.
+			formData: options.formData?.scope ? { scope: options.formData.scope } : {},
 			timeout: options.timeout || 60000,
 			success: (res) => {
 				if (useLoading) hideLoading()
+				if (uploadAccount !== (getStorage('userInfo')?.userId || getStorage('userInfo')?.id)) { reject(new Error('账号已切换，上传结果已忽略')); return }
 				let body = res.data
 				try { body = typeof body === 'string' ? JSON.parse(body) : body } catch { body = null }
 				if (!successfulCode(res.statusCode) || !body) {
@@ -419,47 +434,21 @@ export function resetPassword(data, options = {}) {
 	}, options)
 }
 
-function strictWechatPayload(data, code = data.code) {
-	const practitionerAccount = String(data.role || '').toLowerCase() === 'practitioner'
-	return Object.fromEntries(Object.entries({
-		code,
-		phone: data.phone,
-		challengeId: data.challengeId || (data.phone ? storedChallenge(data.phone, 'VERIFY_PHONE') : undefined),
-		smsCode: data.smsCode,
-		role: data.role && !practitionerAccount ? apiRole(data.role) : undefined,
-		displayName: data.displayName || data.name || data.userInfo?.nickName,
-		acceptedTerms: data.acceptedTerms,
-		consentVersion: data.consentVersion || '1.0',
-		practitionerInviteCode: data.practitionerInviteCode || data.inviteCode
-	}).filter(([, value]) => value !== undefined && value !== ''))
+// Phone authorization is the sole fast-login proof; no wx.login or binding stage.
+export function wechatPhoneLogin(data, options = {}) {
+  return post('/auth/wechat/phone-login', {
+    phoneCode: data.phoneCode, acceptedTerms: data.acceptedTerms === true, consentVersion: data.consentVersion || '2026-10-13'
+  }, { ...options, showError: false }).then((result) => {
+    const payload = result.data || {}
+    if (!payload.accessToken || !payload.refreshToken || !payload.user) throw new Error('手机号登录响应无效')
+    // Commit only after the page validates its current attempt; no early storage.
+    return withData(result, { ...payload, token: payload.accessToken, user: adaptUser(payload.user) })
+  })
 }
-
-function freshWechatCode() {
-	return new Promise((resolve, reject) => {
-		uni.login({
-			provider: 'weixin',
-			success: (result) => result.code ? resolve(result.code) : reject(new Error('获取微信授权码失败')),
-			fail: () => reject(new Error('获取微信授权码失败'))
-		})
-	})
-}
-
-export function wechatLogin(data, options = {}) {
-	return post('/auth/wechat/login', strictWechatPayload(data), { ...options, showError: false }).then(adaptAuth).catch((error) => {
-		if (error.statusCode === 400 && error.message.includes('首次微信登录')) {
-			const role = String(data.role || '').toLowerCase() === 'practitioner' ? 'practitioner' : legacyRole(data.role)
-			return { code: 201, data: { wechatInfo: { role } }, message: error.message }
-		}
-		throw error
-	})
-}
-
-export async function wechatRegister(data, options = {}) {
-	const code = await freshWechatCode()
-	return post('/auth/wechat/login', strictWechatPayload({ ...data, acceptedTerms: true }, code), options).then(adaptAuth)
-}
+export function wechatLogin() { return Promise.reject(new Error('请使用手机号快捷登录')) }
+export function wechatRegister() { return Promise.reject(new Error('账号由健康管理师开通，请从登录页验证手机号')) }
 export const updateUserInfo = (data, options = {}) => patch('/auth/me', profilePayload(data), options).then((result) => withData(result, adaptUser(result.data)))
-export const changePassword = (data, options = {}) => patch('/auth/password', {
+export const changePassword = (data, options = {}) => patch('/auth/change-password', {
 	currentPassword: data.currentPassword || data.oldPassword,
 	newPassword: data.newPassword
 }, options)
@@ -467,43 +456,7 @@ export const logout = (options = {}) => post('/auth/logout', { refreshToken: get
 
 // Health records
 function normalizeHealthRecord(data) {
-	const recordType = String(data.recordType || data.type || '').toUpperCase()
-	let recordedAt = data.recordedAt || data.recordDate || data.date
-	recordedAt = dateBoundary(recordedAt)
-	let mealTime
-	if (recordType === 'DIET' && data.mealTime) {
-		const rawMealTime = String(data.mealTime)
-		const localTime = /^\d{2}:\d{2}$/.test(rawMealTime) ? `${rawMealTime}:00` : rawMealTime
-		const mealValue = rawMealTime.includes('T')
-			? rawMealTime
-			: `${data.recordDate || data.date || new Date().toISOString().slice(0, 10)}T${localTime}`
-		const mealDate = new Date(mealValue)
-		if (!Number.isNaN(mealDate.getTime())) {
-			mealTime = mealDate.toISOString()
-			recordedAt = mealTime
-		}
-	}
-	const payload = {
-		recordType,
-		recordedAt,
-		note: data.note ?? data.notes
-	}
-	if (recordType === 'WEIGHT') {
-		payload.weightKg = Number(data.weightKg ?? data.weight)
-		if (data.bmi !== null && data.bmi !== undefined && data.bmi !== '') payload.bmi = Number(data.bmi)
-	}
-	if (recordType === 'DIET') {
-		const caloriesKcal = Number(data.caloriesKcal ?? data.calories ?? 0)
-		payload.mealType = data.mealType ? String(data.mealType).toUpperCase() : undefined
-		payload.mealTime = mealTime
-		payload.caloriesKcal = caloriesKcal
-		payload.mealItems = data.mealItems || [{
-			name: data.foodName,
-			weightGrams: Number(data.weightGrams ?? data.foodWeight ?? 0),
-			caloriesKcal
-		}]
-	}
-	return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== ''))
+	return normalizeRecordPayload(data)
 }
 
 function adaptHealthRecord(record) {
@@ -552,6 +505,9 @@ export function getHealthRecords(params = {}, options = {}) {
 }
 export const createHealthRecord = (data, options = {}) => post('/health-records', normalizeHealthRecord(data), options).then((result) => withData(result, adaptHealthRecord(result.data)))
 export const updateHealthRecord = (recordId, data, options = {}) => patch(`/health-records/${encodeURIComponent(recordId)}`, normalizeHealthRecord(data), options)
+export const getHealthRecord = (recordId, options = {}) => get(`/health-records/${encodeURIComponent(recordId)}`, {}, options).then((result) => withData(result, adaptHealthRecord(result.data)))
+export const replyToRecordReview = (recordId, reviewId, comment, options = {}) => post(`/me/health-records/${encodeURIComponent(recordId)}/reviews/${encodeURIComponent(reviewId)}/replies`, { comment }, options)
+export const getDietPlans = (options = {}) => get('/diet-plans', {}, options)
 export const deleteHealthRecord = (recordId, options = {}) => del(`/health-records/${encodeURIComponent(recordId)}`, {}, options)
 export function getHealthRecordStats(params = {}, options = {}) {
 	if (params.patientId) {
@@ -788,13 +744,8 @@ async function hydrateFollowUpImages(item, options = {}) {
 		const assetId = followImageAssetId(image)
 		if (!assetId) throw new Error('随访图片资产数据无效')
 		try {
-			const signed = await get(`/media/${encodeURIComponent(assetId)}/url`, {}, {
-				...options,
-				loading: false,
-				showError: false
-			})
-			if (!signed.data?.url) throw new Error('媒体服务未返回授权地址')
-			return signed.data.url
+			// resolveMediaFile requests /media/${encodeURIComponent(assetId)}/url and downloads with Authorization.
+			return await resolveMediaFile(assetId)
 		} catch (cause) {
 			const error = new Error('随访图片授权地址获取失败')
 			error.cause = cause
@@ -1011,8 +962,7 @@ export function getUnreadNotificationCount(params = {}, options = {}) {
 export const deleteNotification = (notificationId, _userId, options = {}) => del(`/notifications/${encodeURIComponent(notificationId)}`, {}, options)
 
 function uploadWithPath(filePath, type, options = {}) {
-	const path = options.cloudPath || generateUploadPath(type)
-	return upload(filePath, { ...options, formData: { path, ...(options.formData || {}) } })
+	return upload(filePath, { ...options, formData: { scope: options.formData?.scope || type } })
 }
 export const uploadAvatar = (filePath, options = {}) => uploadWithPath(filePath, UPLOAD_PATHS.AVATAR, options)
 export const uploadWeightImage = (filePath, options = {}) => uploadWithPath(filePath, UPLOAD_PATHS.WEIGHT_IMAGE, options)

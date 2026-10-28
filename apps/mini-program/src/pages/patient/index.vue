@@ -1,29 +1,59 @@
 <template>
-	<view class="container patient-home">
-		<view class="home-hero" :style="{ paddingTop: navigationTopInset + 'px' }">
-			<view class="brand-row" :style="{ paddingRight: navigationRightInset + 'px' }">
-				<view class="brand-lockup">
-					<view class="brand-logo-tile">
-						<image class="brand-logo" src="/static/logo.png" mode="aspectFit"></image>
-					</view>
-					<view class="brand-copy">
-					<text class="brand-name">数字减重助手</text>
-						<text class="brand-tagline">医学体重管理</text>
-					</view>
-				</view>
-			</view>
-
-			<view class="greeting-row">
-				<view class="greeting-icon">
-					<Icon name="Weather/sun-line.svg" size="20" color="$primary-color" />
-				</view>
-				<view class="greeting-copy">
-					<text class="greeting-title">{{ greeting }}，今天也要好好照顾自己</text>
-					<text class="greeting-date">{{ userInfo.name || '患者' }} · {{ formattedDate }}</text>
-				</view>
-			</view>
-		</view>
-
+	<view class="container patient-home patient-theme">
+    <view class="home-hero" :style="{ paddingTop: navigationTopInset + 'px' }">
+      <view class="brand-row" :style="{ paddingRight: navigationRightInset + 'px' }">
+        <view class="brand-lockup">
+          <image class="brand-logo" src="/static/logo.png" alt="MedTalent健康数字助手" aria-label="MedTalent健康数字助手" mode="aspectFit"></image>
+          <text class="brand-name">MedTalent健康数字助手</text>
+        </view>
+      </view>
+      <view class="greeting-row">
+        <text class="greeting-date">{{ formattedDate }}</text>
+        <text class="greeting-title">把健康，记录下来</text>
+      </view>
+    </view>
+    <view class="section-block task-section">
+      <view class="section-heading-row">
+        <text class="section-heading">今日任务</text>
+        <view class="section-link" role="button" @click="handleQuickAction({ action: 'record' })"><text>每日记录</text><Icon name="Arrows/arrow-right-s-line.svg" size="18" color="$gray-600" /></view>
+      </view>
+      <view class="task-card">
+        <view class="task-row">
+          <view class="task-icon-box"><Icon name="Document/clipboard-line.svg" size="32" color="$patient-primary" /></view>
+          <view class="task-copy"><text class="task-title">记录今日体重</text><text class="task-desc">{{ todayWeightRecorded ? '今日已记录，可查看或修改' : '每天一次，关注身体变化' }}</text></view>
+          <button class="task-cta" :class="{ completed: todayWeightRecorded }" @click="handleQuickAction({ action: 'weight' })">{{ todayWeightRecorded ? '已完成' : '去记录' }}</button>
+        </view>
+        <view class="task-row">
+          <view class="task-icon-box cyan"><Icon name="Food/restaurant-line.svg" size="32" color="$patient-accent" /></view>
+          <view class="task-copy"><text class="task-title">记录今日饮食</text><text class="task-desc">{{ mealProgressText }} · {{ mealDetailText }}</text></view>
+          <button class="task-cta secondary" @click="handleQuickAction({ action: 'diet' })">去记录</button>
+        </view>
+      </view>
+    </view>
+    <view v-if="yuanqizhanLoading || yuanqizhanError || yuanqizhanEntries.length" class="section-block yuanqizhan-section">
+      <text class="section-heading">元气盏活动</text>
+      <view v-if="yuanqizhanLoading" class="clinical-card yuanqizhan-feedback"><text>正在刷新活动…</text></view>
+      <view v-else-if="yuanqizhanError" class="clinical-card yuanqizhan-feedback" role="alert">
+        <text>{{ yuanqizhanError }}</text>
+        <button class="task-cta yuanqizhan-retry" :disabled="yuanqizhanLoading" @tap="loadYuanqizhanEntry">重试加载活动</button>
+      </view>
+      <view v-for="activity in yuanqizhanEntries" :key="activity.id" class="report-shortcut clinical-card yuanqizhan-entry">
+        <view class="shortcut-icon"><Icon name="Document/clipboard-line.svg" size="28" color="$patient-primary" /></view>
+        <view class="task-copy"><text class="task-title">{{ activity.title }}</text><text class="task-desc">{{ activity.canWrite ? '第' + activity.dayNumber + '天 · ' + activityStatus(activity.todayStatus) : '历史记录只读' }}</text></view>
+        <button class="task-cta" :class="{ completed: activity.canWrite && activity.todayStatus === 'SUBMITTED', secondary: !activity.canWrite }" @tap="openYuanqizhan(activity.id)">{{ activity.canWrite ? (activity.todayStatus === 'SUBMITTED' ? '已完成' : '去打卡') : '查看历史' }}</button>
+      </view>
+    </view>
+    <view class="record-shortcuts">
+      <text class="section-heading">数据记录</text>
+      <view class="shortcut-grid">
+        <view class="shortcut-item" role="button" @click="handleQuickAction({ action: 'diet' })"><view class="shortcut-icon"><Icon name="Document/file-text-line.svg" size="24" color="$patient-primary" /></view><text>饮食记录</text><Icon name="Arrows/arrow-right-s-line.svg" size="18" color="$gray-600" /></view>
+        <view class="shortcut-item" role="button" @click="handleQuickAction({ action: 'weight' })"><view class="shortcut-icon cyan"><Icon name="Document/clipboard-line.svg" size="24" color="$patient-accent" /></view><text>体重记录</text><Icon name="Arrows/arrow-right-s-line.svg" size="18" color="$gray-600" /></view>
+      </view>
+      <view class="report-shortcut" role="button" @click="handleQuickAction({ action: 'report' })">
+        <view class="shortcut-icon"><Icon name="Document/file-text-line.svg" size="32" color="$patient-primary" /></view>
+        <view class="task-copy"><text class="task-title">健康报告</text><text class="task-desc">查看阶段记录与变化</text></view><Icon name="Arrows/arrow-right-s-line.svg" size="20" color="$gray-600" />
+      </view>
+    </view>
 		<view class="weight-primary-card clinical-card">
 			<view class="card-heading">
 				<view class="heading-main">
@@ -60,7 +90,7 @@
 				<view class="metric-divider"></view>
 				<view class="metric-item">
 					<text class="metric-label">目标进度</text>
-					<text class="metric-value">{{ weightProgress }}%</text>
+					<text class="metric-value">{{ weightProgress == null ? '待记录' : weightProgress + '%' }}</text>
 				</view>
 			</view>
 			<view class="primary-record-button" @click="handleQuickAction({ action: 'record' })">
@@ -70,43 +100,11 @@
 			<text class="record-helper">每日记录，让变化看得见</text>
 		</view>
 
-		<view class="section-block task-section">
-			<view class="section-heading-row">
-				<view class="section-heading-main">
-					<Icon name="Document/clipboard-line.svg" size="18" color="$primary-color" />
-					<text class="section-heading">今日任务</text>
-					<text class="section-note">· 专业团队为你定制</text>
-				</view>
-				<view class="section-link" @click="handleQuickAction({ action: 'follow' })">
-					<text>查看全部</text>
-					<Icon name="Arrows/arrow-right-s-line.svg" size="16" color="$gray-500" />
-				</view>
-			</view>
-
-			<view class="task-card clinical-card">
-				<view class="task-row" @click="handleQuickAction({ action: 'record' })">
-					<view class="task-icon-box"><Icon name="Food/restaurant-line.svg" size="20" color="$primary-color" /></view>
-					<view class="task-copy">
-						<view class="task-title-row"><text class="task-title">记录三餐饮食</text><text class="task-pill">今日待完成</text></view>
-						<text class="task-desc">拍照或手动记录食物，便于评估饮食结构</text>
-					</view>
-					<view class="task-cta">去完成</view>
-				</view>
-				<view class="task-row reminder-row" @click="handleCareReminder">
-					<view class="task-icon-box portrait"><Icon name="Health/stethoscope-line.svg" size="20" color="$primary-color" /></view>
-					<view class="task-copy">
-						<text class="task-title">医生/营养师提醒</text>
-						<text class="task-desc">{{ careReminderText }}</text>
-					</view>
-					<Icon name="Arrows/arrow-right-s-line.svg" size="18" color="$primary-color" />
-				</view>
-			</view>
-		</view>
-
+    <view class="care-reminder clinical-card" role="button" @click="handleCareReminder"><view class="task-icon-box cyan"><Icon name="Health/stethoscope-line.svg" size="24" color="$patient-accent" /></view><view class="task-copy"><text class="task-title">医生/营养师提醒</text><text class="task-desc">{{ careReminderText }}</text></view><Icon name="Arrows/arrow-right-s-line.svg" size="18" color="$gray-600" /></view>
 		<view class="trend-card clinical-card">
 			<view class="card-heading">
 				<view class="heading-main">
-					<Icon name="Business/line-chart-line.svg" size="18" color="$primary-color" />
+					<Icon name="Business/line-chart-line.svg" size="18" color="$patient-primary" />
 					<text class="heading-title">体重趋势（近7天）</text>
 				</view>
 				<text class="heading-meta">单位：kg</text>
@@ -119,7 +117,7 @@
 		</view>
 
 		<view class="health-note clinical-card">
-			<view class="health-note-icon"><Icon name="Health/heart-pulse-line.svg" size="20" color="$primary-color" /></view>
+			<view class="health-note-icon"><Icon name="Health/heart-pulse-line.svg" size="20" color="$patient-primary" /></view>
 			<view class="health-note-copy">
 				<text class="health-note-title">你的健康，我们一起守护</text>
 				<text class="health-note-text">所有数据仅用于健康管理，不用于诊断。如有不适，请及时就医。</text>
@@ -127,7 +125,7 @@
 		</view>
 
 		<view class="daily-tip clinical-card">
-			<view class="daily-tip-icon"><Icon name="Food/cup-line.svg" size="20" color="$primary-color" /></view>
+			<view class="daily-tip-icon"><Icon name="Food/cup-line.svg" size="20" color="$patient-primary" /></view>
 			<view class="daily-tip-copy">
 				<text class="daily-tip-title">饮水小贴士</text>
 				<text class="daily-tip-text">建议今日饮水1500–1700ml，少量多次。</text>
@@ -137,13 +135,13 @@
 		<view class="quick-actions section-block">
 			<view class="section-heading-row">
 				<view class="section-heading-main">
-					<Icon name="Others/lightbulb-line.svg" size="18" color="$primary-color" />
+					<Icon name="Others/lightbulb-line.svg" size="18" color="$patient-primary" />
 					<text class="section-heading">快捷服务</text>
 				</view>
 			</view>
 			<view class="action-grid clinical-card">
 				<view class="action-item" v-for="(action, index) in patientActions" :key="index" @click="handleQuickAction(action)">
-					<view class="action-icon"><Icon :name="action.icon" size="20" color="$primary-color" /></view>
+					<view class="action-icon"><Icon :name="action.icon" size="20" color="$patient-primary" /></view>
 					<text class="action-text">{{ action.text }}</text>
 				</view>
 			</view>
@@ -152,7 +150,7 @@
 		<view class="section-block recent-notifications" v-if="visibleNotifications.length > 0">
 			<view class="section-heading-row">
 				<view class="section-heading-main">
-					<Icon name="System/notification-badge-line.svg" size="18" color="$primary-color" />
+					<Icon name="System/notification-badge-line.svg" size="18" color="$patient-primary" />
 					<text class="section-heading">最近通知</text>
 				</view>
 				<view class="notification-badge" v-if="unreadCount > 0"><text class="badge-text">{{ unreadCount }}</text></view>
@@ -160,7 +158,7 @@
 			<view class="task-card clinical-card">
 				<view class="notification-wrapper" v-for="(item, index) in visibleNotifications" :key="item.id || `${item.title}-${index}`">
 					<view class="task-row live-notification" @click.stop="handleNotification(item, index)" @touchstart="onTouchStart($event, index)" @touchmove="onTouchMove($event, index)" @touchend="onTouchEnd($event, index)" :style="{ transform: `translateX(${item.translateX || 0}px)` }">
-						<view class="task-icon-box"><Icon :name="notificationIcon(item.type)" size="20" color="$primary-color" /></view>
+						<view class="task-icon-box"><Icon :name="notificationIcon(item.type)" size="20" color="$patient-primary" /></view>
 						<view class="task-copy">
 							<view class="task-title-row"><text class="task-title">{{ item.title }}</text><view class="unread-dot" v-if="!item.read"></view></view>
 							<text class="task-desc">{{ item.desc }}</text>
@@ -216,15 +214,15 @@
 					<text class="modal-desc">您还没有绑定医生/营养师，绑定后可以获得专业的健康指导和个性化的体重管理方案。</text>
 					<view class="benefits">
 						<view class="benefit-item">
-							<Icon name="Health/stethoscope-line.svg" size="20" color="$primary-color" />
+							<Icon name="Health/stethoscope-line.svg" size="20" color="$patient-primary" />
 							<text class="benefit-text">专业医生/营养师指导</text>
 						</view>
 						<view class="benefit-item">
-							<Icon name="Document/clipboard-line.svg" size="20" color="$primary-color" />
+							<Icon name="Document/clipboard-line.svg" size="20" color="$patient-primary" />
 							<text class="benefit-text">个性化方案</text>
 						</view>
 						<view class="benefit-item">
-							<Icon name="Business/line-chart-line.svg" size="20" color="$primary-color" />
+							<Icon name="Business/line-chart-line.svg" size="20" color="$patient-primary" />
 							<text class="benefit-text">实时健康监测</text>
 						</view>
 					</view>
@@ -240,9 +238,11 @@
 <script>
 	import Icon from '../../components/Icon.vue'
 	import store from '../../store/index.js'
-	import { getHealthRecords, getUnreadMessageCount, setTargetWeight, getNotifications, getUnreadNotificationCount, markNotificationAsRead, getPatientDoctors, deleteNotification } from '../../utils/api.js'
+	import { getHealthRecords, getHealthReports, getUnreadMessageCount, setTargetWeight, getNotifications, getUnreadNotificationCount, markNotificationAsRead, getPatientDoctors, deleteNotification } from '../../utils/api.js'
 	import { showToast } from '../../utils/common.js'
 	import { getCustomNavigationLayout } from '../../utils/navigation.js'
+	import { getMyActivities, patientActivitySession } from '../../utils/yuanqizhan.js'
+	import { statusLabel } from '../../utils/yuanqizhan-model.js'
 	
 	export default {
 		components: {
@@ -251,12 +251,20 @@
 		data() {
 				return {
 				userInfo: {},
+				yuanqizhanEntries: [],
+				yuanqizhanAccount: '',
+				yuanqizhanEpoch: 0,
+				yuanqizhanLoading: false,
+				yuanqizhanError: '',
+				unsubscribeYuanqizhan: null,
 				navigationTopInset: 10,
 				navigationRightInset: 0,
 				currentWeight: 0,
+				todayWeightRecorded: false,
+				healthDataEpoch: 0,
 				targetWeight: 0,
 				bmiValue: 0,
-				weightProgress: 0,
+				weightProgress: null,
 				homeWeightTrend: [],
 				unreadCount: 0,
 				loading: false,
@@ -269,29 +277,8 @@
 				touchStartX: 0,
 				touchStartY: 0,
 				currentSwipeIndex: -1,
-				patientNotifications: [
-					{
-						title: '随访提醒',
-						desc: '请完成本周的体重记录和问卷填写',
-						time: '2小时前',
-						read: false,
-						type: 'follow'
-					},
-					{
-						title: '数据异常提醒',
-						desc: '您的体重变化较大，建议咨询医生',
-						time: '1天前',
-						read: false,
-						type: 'warning'
-					},
-					{
-						title: '系统消息',
-						desc: '体重管理小程序功能更新',
-						time: '3天前',
-						read: true,
-						type: 'system'
-					}
-				],
+				patientNotifications: [],
+				mealCounts: null,
 				patientActions: [
 				{ icon: 'Others/scales-line.svg', text: '记录体重', action: 'record' },
 				{ icon: 'Business/bar-chart-line.svg', text: '查看报告', action: 'report' },
@@ -303,6 +290,8 @@
 		},
 
 		computed: {
+      mealProgressText() { if (!this.mealCounts) return '待加载'; return '已记录 ' + ['BREAKFAST', 'LUNCH', 'DINNER'].filter(k => Number(this.mealCounts[k]) > 0).length + '/3 餐' },
+      mealDetailText() { if (!this.mealCounts) return '拍照、文字或食物均可记录'; return ['BREAKFAST','LUNCH','DINNER','SNACK'].map((k,i) => ['早','午','晚','加餐'][i] + ' ' + Number(this.mealCounts[k] || 0) + ' 条').join(' · ') },
 			displayWeight() {
 				return Number(this.currentWeight) > 0 ? Number(this.currentWeight).toFixed(1) : '--'
 			},
@@ -350,6 +339,7 @@
 		},
 
 		onLoad() {
+			this.unsubscribeYuanqizhan = store.subscribe('user', () => { if (patientActivitySession() !== this.yuanqizhanAccount) this.clearYuanqizhanEntry() })
 				this.setupNavigationLayout()
 				this.getUserInfo()
 				this.checkLoginStatus()
@@ -370,7 +360,26 @@
 			},
 		
 
+		onShow() { this.clearYuanqizhanEntry(); if (store.isLogin()) { this.getUserInfo(); this.initPageData(); this.loadYuanqizhanEntry() } },
+		onHide() { this.clearYuanqizhanEntry() },
+		onUnload() { this.clearYuanqizhanEntry(); this.unsubscribeYuanqizhan?.() },
 		methods: {
+      activityStatus: statusLabel,
+      clearYuanqizhanEntry() { this.yuanqizhanEpoch++; this.yuanqizhanEntries = []; this.yuanqizhanAccount = ''; this.yuanqizhanLoading = false; this.yuanqizhanError = '' },
+      async loadYuanqizhanEntry() {
+        const account = patientActivitySession(), epoch = ++this.yuanqizhanEpoch
+        this.yuanqizhanEntries = []; this.yuanqizhanError = ''; this.yuanqizhanLoading = false
+        this.yuanqizhanAccount = account
+        if (!account) return
+        this.yuanqizhanLoading = true
+        try { const items = await getMyActivities(); if (account === patientActivitySession() && epoch === this.yuanqizhanEpoch) this.yuanqizhanEntries = items }
+        catch { if (account === patientActivitySession() && epoch === this.yuanqizhanEpoch) this.yuanqizhanError = '活动刷新失败，暂未获取最新状态，请重试。' }
+        finally { if (account === patientActivitySession() && epoch === this.yuanqizhanEpoch) this.yuanqizhanLoading = false }
+      },
+      openYuanqizhan(id) {
+        if (!this.yuanqizhanAccount || patientActivitySession() !== this.yuanqizhanAccount || !this.yuanqizhanEntries.some(item => item.id === id)) { this.clearYuanqizhanEntry(); return }
+        uni.navigateTo({ url: '/pages/patient/yuanqizhan?activityId=' + encodeURIComponent(id) })
+      },
 			setupNavigationLayout() {
 				const layout = getCustomNavigationLayout()
 				this.navigationTopInset = layout.topInset
@@ -441,7 +450,14 @@
 						this.updateUnreadCount()
 					}
 					
-					// 根据通知类型进行相应跳转
+					// Map only known notification routes; never navigate to an arbitrary server URL.
+          if (String(item.relatedType || '').toUpperCase() === 'EXERCISE_REPORT_SHARED' && item.relatedId) {
+            uni.navigateTo({ url: '/pages/shared-report/shared-report?shareId=' + encodeURIComponent(item.relatedId) }); return
+          }
+          if (['HEALTH_RECORD_REVIEW', 'DIET_PLAN'].includes(String(item.relatedType || '').toUpperCase())) {
+            uni.setStorageSync('patientRecordTab', 'diet'); uni.switchTab({ url: '/pages/patient/record' }); return
+          }
+          // 根据通知类型进行相应跳转
 					if (String(item.relatedType || '').toUpperCase() === 'CARE_SUMMARY') {
 						uni.setStorageSync('patientReportTab', 'summary')
 						uni.switchTab({ url: '/pages/patient/report' })
@@ -512,6 +528,14 @@
 			// 处理快速操作
 			handleQuickAction(action) {
 				switch(action.action) {
+					case 'diet':
+						uni.setStorageSync('patientRecordTab', 'diet')
+						uni.switchTab({ url: '/pages/patient/record' })
+						break
+					case 'weight':
+						uni.setStorageSync('patientRecordTab', 'weight')
+						uni.switchTab({ url: '/pages/patient/record' })
+						break
 					case 'record':
 						uni.switchTab({ url: '/pages/patient/record' })
 						break
@@ -543,7 +567,7 @@
 				
 				// 判断是否为水平滑动
 				if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
-					e.preventDefault()
+					e.preventDefault?.()
 					
 					// 只允许向左滑动
 					if (deltaX < 0) {
@@ -657,6 +681,8 @@
 
 			// 加载健康数据
 			async loadHealthData() {
+				const epoch = ++this.healthDataEpoch
+				this.todayWeightRecorded = false
 				try {
 					this.loading = true
 					
@@ -683,9 +709,9 @@
 							this.bmiValue = (latestWeightRecord.weight / (heightInM * heightInM)).toFixed(1)
 						}
 						
-						// 计算进度（假设初始体重为目标体重+10kg）
-						if (this.targetWeight > 0 && this.currentWeight > 0) {
-							const initialWeight = this.targetWeight + 10
+						// 仅使用真实初始体重计算进度
+						if (this.targetWeight > 0 && this.currentWeight > 0 && Number(userInfo.weight || userInfo.initialWeightKg) > this.targetWeight) {
+							const initialWeight = Number(userInfo.weight || userInfo.initialWeightKg)
 							const weightLoss = initialWeight - this.currentWeight
 							const totalWeightLoss = initialWeight - this.targetWeight
 							this.weightProgress = Math.min(100, Math.max(0, Math.round((weightLoss / totalWeightLoss) * 100)))
@@ -695,7 +721,16 @@
 						this.homeWeightTrend = []
 					}
 					
-					// 单独获取未读消息数（非阻塞）
+					const reportResult = await getHealthReports({}, { loading: false, showError: false })
+          if (epoch !== this.healthDataEpoch) return
+          const report = reportResult.code === 200 ? reportResult.data : null
+          const today = report?.diet?.today?.date
+          this.todayWeightRecorded = Boolean(today && report?.weight?.records?.some(record => {
+            const measuredAt = new Date(record.recordedAt || record.measuredAt).getTime()
+            return Number(record.weightKg ?? record.weight) > 0 && Number.isFinite(measuredAt) && new Date(measuredAt + 8 * 60 * 60 * 1000).toISOString().slice(0, 10) === today
+          }))
+          this.mealCounts = reportResult.data?.diet?.today?.mealCounts || null
+          // 单独获取未读消息数（非阻塞）
 					this.loadUnreadCount()
 					
 				} catch (error) {
@@ -2248,4 +2283,15 @@
 	.binding-modal .bind-btn {
 		box-shadow: 0 8rpx 20rpx rgba(22, 143, 185, 0.22);
 	}
+</style>
+
+<style scoped lang="scss">
+@import "./home-third.scss";
+</style>
+
+<style scoped>
+/* Narrow-screen action spacing and reachable controls. */
+.target-weight-modal button, .binding-modal button { min-height: 44px; height: auto; display: flex; align-items: center; justify-content: center; padding: 10px 14px; line-height: 1.5; font-size: 14px; }
+.target-weight-modal .modal-footer, .binding-modal .modal-footer { gap: 12px; }
+.target-weight-modal, .binding-modal { max-height: calc(100vh - 32px - env(safe-area-inset-bottom)); overflow-y: auto; }
 </style>

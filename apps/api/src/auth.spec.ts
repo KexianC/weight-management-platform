@@ -185,6 +185,6 @@ describe('AuthService', () => {
 
     await expect(
       service.practitionerLogin({ phone: '13800000003', password: 'Password!2026' }),
-    ).rejects.toThrow('该手机号存在多个执业身份账号，请联系管理员处理');
+    ).rejects.toThrow('账号或密码错误');
   });
 });

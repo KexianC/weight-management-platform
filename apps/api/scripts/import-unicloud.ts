@@ -17,6 +17,7 @@ import {
 } from '@prisma/client';
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { practitionerPhoneKey } from '../src/domain';
 
 type LegacyRow = Record<string, any>;
 const prisma = new PrismaClient();
@@ -135,6 +136,7 @@ async function importUsers() {
       create: {
         id: sourceId,
         phone,
+        practitionerPhone: practitionerPhoneKey(userRole, phone),
         passwordHash: legacyPassword(row),
         displayName: text(row.name || row.displayName || row.nickname) || '未命名用户',
         avatarUrl: text(row.avatarUrl || row.avatar) || undefined,
@@ -145,6 +147,7 @@ async function importUsers() {
       update: {
         displayName: text(row.name || row.displayName || row.nickname) || '未命名用户',
         role: userRole,
+        practitionerPhone: practitionerPhoneKey(userRole, phone),
         status: ['inactive', 'banned', 'disabled'].includes(text(row.status).toLowerCase()) ? UserStatus.DISABLED : UserStatus.ACTIVE,
         ...(legacyPassword(row) ? { passwordHash: legacyPassword(row) } : {}),
       },

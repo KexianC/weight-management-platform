@@ -9,6 +9,8 @@ const allowedNamedSizes = new Set(['xs', 'sm', 'md', 'lg', 'xl'])
 const allowedNumericSizes = new Set([12, 14, 16, 18, 20, 24, 32, 36, 40, 48, 64])
 const allowedColors = new Set([
   '$primary-color',
+  '$patient-primary',
+  '$patient-accent',
   '$secondary-color',
   '$accent-color',
   '$success-color',

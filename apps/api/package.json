@@ -11,7 +11,8 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "import:unicloud": "tsx scripts/import-unicloud.ts",
     "test:e2e:smoke": "tsx scripts/e2e-smoke.ts",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "build:release": "nest build --path tsconfig.release.json"
   },
   "dependencies": {
     "@alicloud/dysmsapi20170525": "^4.6.0",

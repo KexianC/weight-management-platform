@@ -4,7 +4,7 @@ import { extname, join, relative } from 'node:path'
 const root = new URL('../src/', import.meta.url)
 const sourceRoot = decodeURIComponent(root.pathname.replace(/^\/(?:[A-Za-z]:)/, (match) => match.slice(1)))
 const textExtensions = new Set(['.vue', '.js', '.json', '.scss', '.css', '.html'])
-const forbiddenNames = ['轻盈伴行', '体重管理助手', '轻衡健康', '木吾木同']
+const forbiddenNames = ['数字减重助手', '轻盈伴行', '体重管理助手', '轻衡健康', '木吾木同']
 const violations = []
 let expectedBrandCount = 0
 
@@ -22,10 +22,12 @@ function visit(directory) {
 
     const content = readFileSync(absolutePath, 'utf8')
     const file = relative(sourceRoot, absolutePath)
-    expectedBrandCount += content.split('数字减重助手').length - 1
+    expectedBrandCount += content.split('MedTalent健康数字助手').length - 1
 
     for (const forbidden of forbiddenNames) {
-      if (content.includes(forbidden)) {
+      const policy = /pages[\\/]agreement[\\/](privacy-policy|user-agreement)\.vue$/.test(file)
+      const brandedContent = policy ? content.replaceAll('木吾木同(杭州)医疗管理有限公司', '') : content
+      if (brandedContent.includes(forbidden)) {
         violations.push(`${file}: 禁止品牌文本 “${forbidden}”`)
       }
     }
@@ -44,7 +46,7 @@ function visit(directory) {
 visit(sourceRoot)
 
 if (expectedBrandCount === 0) {
-  violations.push('源码中未找到统一品牌名 “数字减重助手”')
+  violations.push('源码中未找到统一品牌名 “MedTalent健康数字助手”')
 }
 
 if (violations.length > 0) {
@@ -53,4 +55,4 @@ if (violations.length > 0) {
   process.exit(1)
 }
 
-console.log(`品牌契约检查通过：数字减重助手（${expectedBrandCount} 处），Logo 统一为 /static/logo.png`)
+console.log(`品牌契约检查通过：MedTalent健康数字助手（${expectedBrandCount} 处），Logo 统一为 /static/logo.png`)

@@ -283,7 +283,8 @@
 
 <script>
 import store from '../../store/index.js'
-import { createFollowUp, getPatients } from '../../utils/api.js'
+import { createFollowUp } from '../../utils/api.js'
+import { managedPatientList as getPatients } from '../../utils/managed-care.js'
 import { showToast } from '../../utils/common.js'
 import Icon from '../../components/Icon.vue'
 
@@ -296,6 +297,7 @@ export default {
 			loading: false,
 			showPatientModal: false,
 			selectedPatients: [],
+			initialPatientId: '',
 			patients: [],
 			followData: {
 				followType: '',
@@ -365,7 +367,8 @@ export default {
 			return today.toISOString().split('T')[0]
 		}
 	},
-	onLoad() {
+	onLoad(options = {}) {
+		this.initialPatientId = String(options.patientId || '')
 		// 检查登录状态
 		if (!store.isLogin()) {
 			uni.reLaunch({
@@ -389,6 +392,10 @@ export default {
 				const result = await getPatients({ doctorId: userInfo.userId })
 				if (result.code === 200) {
 					this.patients = result.data.patients || []
+					if (this.initialPatientId) {
+						this.selectedPatients = this.patients.filter((patient) => patient.userId === this.initialPatientId)
+						this.initialPatientId = ''
+					}
 				} else {
 					showToast(result.message || '获取患者列表失败')
 				}
@@ -1879,4 +1886,16 @@ export default {
 .custom-date-text {
 	color: #365567;
 }
+</style>
+
+<style scoped>
+/* Narrow-screen action spacing and reachable controls. */
+.follow-add-container button { min-height: 44px; height: auto; display: flex; align-items: center; justify-content: center; padding: 10px 14px; line-height: 1.5; font-size: 14px; }
+.follow-add-container .footer { gap: 12px; }
+.follow-add-container .form-container { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+.follow-add-container .modal-content, .follow-add-container .custom-modal-content { display: flex; flex-direction: column; max-height: calc(100vh - 60px - env(safe-area-inset-top)); }
+.follow-add-container .patient-list, .follow-add-container .custom-selected-list { min-height: 0; overflow-y: auto; }
+.follow-add-container .modal-header, .follow-add-container .custom-modal-header, .follow-add-container .modal-footer, .follow-add-container .custom-modal-footer, .follow-add-container .custom-date-picker-container { flex-shrink: 0; }
+.follow-add-container .modal-close, .follow-add-container .custom-modal-close { min-width: 44px; min-height: 44px; flex-shrink: 0; }
+.follow-add-container .selector-text { min-width: 0; overflow-wrap: anywhere; }
 </style>

@@ -53,7 +53,7 @@
 				<view v-if="followRecord.followType === 'weight_check'" class="result-content">
 					<view class="result-item">
 						<text class="label">体重：</text>
-						<text class="value weight">{{ followRecord.result?.weight || '--' }} kg</text>
+						<text class="value weight">{{ followUpWeight(followRecord.result) ?? '--' }} kg</text>
 					</view>
 					<view class="result-item" v-if="followRecord.result?.note">
 						<text class="label">备注：</text>
@@ -140,6 +140,7 @@
 import { getFollowUpDetail } from '@/utils/api.js'
 import { showToast } from '@/utils/common.js'
 import Icon from '@/components/Icon.vue'
+import { followUpWeight } from '../../utils/follow-result.js'
 
 export default {
 	components: {
@@ -163,6 +164,7 @@ export default {
 		}
 	},
 	methods: {
+		followUpWeight,
 		// 加载随访记录
 		async loadFollowRecord() {
 			try {
@@ -638,4 +640,10 @@ export default {
 	line-height: 1.75;
 	color: #476574;
 }
+</style>
+
+<style scoped>
+/* Narrow-screen action spacing and reachable controls. */
+.follow-record-container .retry-btn { min-height: 44px; height: auto; display: flex; align-items: center; justify-content: center; padding: 10px 14px; line-height: 1.5; font-size: 14px; margin-top: 16px; }
+.follow-record-container .back-btn, .follow-record-container .action-btn { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
 </style>

@@ -11,12 +11,15 @@ enum UserRole {
   PATIENT
   DOCTOR
   NUTRITIONIST
+  HEALTH_MANAGER
+  EXERCISE_COACH
   ADMIN
 }
 
 enum UserStatus {
   ACTIVE
   DISABLED
+  DELETED
 }
 
 enum Gender {
@@ -59,6 +62,7 @@ enum HealthRecordType {
   GENERAL
   BLOOD_PRESSURE
   SYMPTOM
+  SLEEP
 }
 
 enum MealType {
@@ -152,44 +156,74 @@ enum CareSummaryPeriod {
   MONTHLY
 }
 
-model User {
-  id           String     @id @default(cuid())
-  phone        String     @db.VarChar(32)
-  email        String?    @unique @db.VarChar(191)
-  passwordHash String?    @db.VarChar(255)
-  displayName  String     @db.VarChar(80)
-  avatarUrl    String?    @db.VarChar(500)
-  role         UserRole
-  status       UserStatus @default(ACTIVE)
-  lastLoginAt  DateTime?
-  disabledAt   DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+enum DietPlanStatus {
+  ACTIVE
+  ENDED
+}
 
-  patientProfile          PatientProfile?
-  practitionerProfile     PractitionerProfile?
-  authIdentities          AuthIdentity[]
-  patientRelations        CareRelation[]       @relation("PatientRelations")
-  practitionerRelations   CareRelation[]       @relation("PractitionerRelations")
-  careInvites             CareInvite[]
-  healthRecords           HealthRecord[]
-  assignedTasks           PatientTask[]        @relation("AssignedTasks")
-  receivedTasks           PatientTask[]        @relation("ReceivedTasks")
-  sentMessages            Message[]            @relation("SentMessages")
-  receivedMessages        Message[]            @relation("ReceivedMessages")
-  refreshTokens           RefreshToken[]
-  consents                Consent[]
-  auditLogs               AuditLog[]
-  followUpsAsPatient      FollowUp[]           @relation("PatientFollowUps")
-  followUpsAsPractitioner FollowUp[]           @relation("PractitionerFollowUps")
-  notifications           Notification[]
-  mediaAssets             MediaAsset[]
-  calorieEstimates        CalorieEstimate[]
-  patientArchive          PatientArchive?      @relation("PatientArchivePatient")
-  patientArchivesCreated  PatientArchive[]     @relation("PatientArchivesCreatedBy")
-  patientArchivesUpdated  PatientArchive[]     @relation("PatientArchivesUpdatedBy")
-  careSummariesAsPatient  CareSummary[]         @relation("PatientCareSummaries")
-  careSummariesAuthored   CareSummary[]         @relation("PractitionerCareSummaries")
+model User {
+  id                       String     @id @default(cuid())
+  phone                    String     @db.VarChar(32)
+  practitionerPhone        String?    @unique @db.VarChar(32)
+  email                    String?    @unique @db.VarChar(191)
+  passwordHash             String?    @db.VarChar(255)
+  mustChangePassword       Boolean    @default(false)
+  initialPasswordExpiresAt DateTime?
+  sessionVersion           Int        @default(0)
+  displayName              String     @db.VarChar(80)
+  avatarUrl                String?    @db.VarChar(500)
+  role                     UserRole
+  status                   UserStatus @default(ACTIVE)
+  lastLoginAt              DateTime?
+  disabledAt               DateTime?
+  deletedAt                DateTime?
+  createdAt                DateTime   @default(now())
+  updatedAt                DateTime   @updatedAt
+
+  patientProfile            PatientProfile?
+  practitionerProfile       PractitionerProfile?
+  authIdentities            AuthIdentity[]
+  patientRelations          CareRelation[]            @relation("PatientRelations")
+  practitionerRelations     CareRelation[]            @relation("PractitionerRelations")
+  careInvites               CareInvite[]
+  healthRecords             HealthRecord[]
+  assignedTasks             PatientTask[]             @relation("AssignedTasks")
+  receivedTasks             PatientTask[]             @relation("ReceivedTasks")
+  sentMessages              Message[]                 @relation("SentMessages")
+  receivedMessages          Message[]                 @relation("ReceivedMessages")
+  refreshTokens             RefreshToken[]
+  consents                  Consent[]
+  auditLogs                 AuditLog[]
+  followUpsAsPatient        FollowUp[]                @relation("PatientFollowUps")
+  followUpsAsPractitioner   FollowUp[]                @relation("PractitionerFollowUps")
+  notifications             Notification[]
+  mediaAssets               MediaAsset[]
+  calorieEstimates          CalorieEstimate[]
+  patientArchive            PatientArchive?           @relation("PatientArchivePatient")
+  patientArchivesCreated    PatientArchive[]          @relation("PatientArchivesCreatedBy")
+  patientArchivesUpdated    PatientArchive[]          @relation("PatientArchivesUpdatedBy")
+  careSummariesAsPatient    CareSummary[]             @relation("PatientCareSummaries")
+  careSummariesAuthored     CareSummary[]             @relation("PractitionerCareSummaries")
+  healthRecordReviews       HealthRecordReview[]      @relation("HealthRecordReviewAuthor")
+  dietPlanTemplates         DietPlanTemplate[]        @relation("DietPlanTemplateCreator")
+  dietPlansAsPatient        DietPlan[]                @relation("PatientDietPlans")
+  dietPlansAsPractitioner   DietPlan[]                @relation("PractitionerDietPlans")
+  careEnrollment            CareEnrollment?           @relation("EnrollmentPatient")
+  managedEnrollments        CareEnrollment[]          @relation("EnrollmentManager")
+  nutritionEnrollments      CareEnrollment[]          @relation("EnrollmentNutritionist")
+  doctorEnrollments         CareEnrollment[]          @relation("EnrollmentDoctor")
+  exerciseEnrollments       CareEnrollment[]          @relation("EnrollmentCoach")
+  bodyReportsCreated        BodyAssessment[]
+  exerciseVideosCreated     ExerciseVideo[]
+  exerciseReportsCreated    ExercisePrescription[]
+  exerciseSharesCreated     ExerciseReportShare[]
+  healthRecordReviewReplies HealthRecordReviewReply[]
+  healthDocumentsCreated    HealthReportDocument[] @relation("HealthReportCreator")
+  ownHealthDocuments        HealthReportDocument[] @relation("HealthReportPatient")
+  consentDocumentsCreated   ConsentDocument[]
+  ocrDraftsCreated          OcrDraft[]
+  yuanqizhanMemberships     YuanqizhanMember[]
+  yuanqizhanRecords         YuanqizhanDailyRecord[]
 
   @@unique([phone, role])
 }
@@ -320,27 +354,49 @@ model CareRelation {
 }
 
 model HealthRecord {
-  id           String           @id @default(cuid())
-  patientId    String
-  recordType   HealthRecordType @default(WEIGHT)
-  weightKg     Decimal?         @db.Decimal(5, 2)
-  waistCm      Decimal?         @db.Decimal(5, 2)
-  bodyFatPct   Decimal?         @db.Decimal(5, 2)
-  mealType     MealType?
-  mealItems    Json?
-  caloriesKcal Decimal?         @db.Decimal(8, 2)
-  imageUrls    Json?
-  payload      Json?
-  measuredAt   DateTime
-  source       String           @default("MANUAL") @db.VarChar(32)
-  note         String?          @db.VarChar(500)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  patient      User             @relation(fields: [patientId], references: [id])
-  assets       MediaAsset[]
+  id                 String               @id @default(cuid())
+  requestKey         String?              @unique @db.VarChar(64)
+  requestFingerprint String?              @db.VarChar(64)
+  patientId          String
+  recordType         HealthRecordType     @default(WEIGHT)
+  weightKg           Decimal?             @db.Decimal(5, 2)
+  waistCm            Decimal?             @db.Decimal(5, 2)
+  hipCm              Decimal?             @db.Decimal(5, 2)
+  sleepHours         Decimal?             @db.Decimal(4, 2)
+  caloriesSource     String?              @db.VarChar(32)
+  bodyFatPct         Decimal?             @db.Decimal(5, 2)
+  mealType           MealType?
+  mealItems          Json?
+  caloriesKcal       Decimal?             @db.Decimal(8, 2)
+  imageUrls          Json?
+  payload            Json?
+  measuredAt         DateTime
+  source             String               @default("MANUAL") @db.VarChar(32)
+  note               String?              @db.VarChar(500)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  patient            User                 @relation(fields: [patientId], references: [id])
+  assets             MediaAsset[]
+  reviews            HealthRecordReview[]
 
   @@index([patientId, measuredAt])
   @@index([patientId, recordType, measuredAt])
+}
+
+model HealthRecordReview {
+  id             String       @id @default(cuid())
+  healthRecordId String
+  practitionerId String
+  comment        String       @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  healthRecord   HealthRecord @relation(fields: [healthRecordId], references: [id], onDelete: Cascade)
+  practitioner   User         @relation("HealthRecordReviewAuthor", fields: [practitionerId], references: [id], onDelete: Restrict)
+
+  replies HealthRecordReviewReply[]
+
+  @@index([healthRecordId, updatedAt])
+  @@index([practitionerId, updatedAt])
 }
 
 model PatientTask {
@@ -502,30 +558,193 @@ model CareSummary {
   @@index([practitionerId, publishedAt])
 }
 
+model DietPlanTemplate {
+  id                String     @id @default(cuid())
+  title             String     @db.VarChar(120)
+  summary           String?    @db.VarChar(500)
+  content           Json
+  dailyCaloriesKcal Int?
+  durationDays      Int?
+  active            Boolean    @default(true)
+  createdById       String
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  createdBy         User       @relation("DietPlanTemplateCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  plans             DietPlan[]
+
+  @@index([active, updatedAt])
+  @@index([createdById])
+}
+
+model DietPlan {
+  id             String            @id @default(cuid())
+  patientId      String
+  practitionerId String
+  templateId     String?
+  title          String            @db.VarChar(120)
+  summary        String?           @db.VarChar(500)
+  content        Json
+  instructions   String?           @db.Text
+  status         DietPlanStatus    @default(ACTIVE)
+  startsAt       DateTime
+  endsAt         DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  patient        User              @relation("PatientDietPlans", fields: [patientId], references: [id], onDelete: Cascade)
+  practitioner   User              @relation("PractitionerDietPlans", fields: [practitionerId], references: [id], onDelete: Restrict)
+  template       DietPlanTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([patientId, status, startsAt])
+  @@index([practitionerId, status, createdAt])
+  @@index([templateId])
+}
+
 model MediaAsset {
-  id             String        @id @default(cuid())
-  ownerId        String
-  healthRecordId String?
-  provider       String        @default("ALIYUN_OSS") @db.VarChar(32)
-  bucket         String?       @db.VarChar(191)
-  objectKey      String        @unique @db.VarChar(500)
-  url            String?       @db.VarChar(1000)
-  mimeType       String        @db.VarChar(120)
-  sizeBytes      BigInt?
-  sha256         String?       @db.VarChar(64)
-  scope          String        @default("GENERAL") @db.VarChar(50)
-  referenceType  String?       @db.VarChar(50)
-  referenceId    String?       @db.VarChar(191)
-  status         MediaStatus   @default(PENDING)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  deletedAt      DateTime?
-  owner          User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  healthRecord   HealthRecord? @relation(fields: [healthRecordId], references: [id], onDelete: SetNull)
+  id              String                @id @default(cuid())
+  ownerId         String
+  healthRecordId  String?
+  provider        String                @default("ALIYUN_OSS") @db.VarChar(32)
+  bucket          String?               @db.VarChar(191)
+  objectKey       String                @unique @db.VarChar(500)
+  url             String?               @db.VarChar(1000)
+  mimeType        String                @db.VarChar(120)
+  sizeBytes       BigInt?
+  sha256          String?               @db.VarChar(64)
+  scope           String                @default("GENERAL") @db.VarChar(50)
+  referenceType   String?               @db.VarChar(50)
+  referenceId     String?               @db.VarChar(191)
+  status          MediaStatus           @default(PENDING)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  deletedAt       DateTime?
+  owner           User                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  healthRecord    HealthRecord?         @relation(fields: [healthRecordId], references: [id], onDelete: SetNull)
+  posturePhoto    PosturePhoto?
+  exerciseVideo   ExerciseVideo?
+  healthDocument  HealthReportDocument?
+  consentDocument ConsentDocument?
+  ocrDraft        OcrDraft?
+  yuanqizhanPhoto  YuanqizhanPhoto?
 
   @@index([ownerId, status, createdAt])
   @@index([referenceType, referenceId])
   @@index([healthRecordId])
+}
+
+model CareEnrollment {
+  id               String                 @id @default(cuid())
+  patientId        String                 @unique
+  clientCode       String                 @unique @db.VarChar(32)
+  packageName      String                 @db.VarChar(120)
+  healthManagerId  String
+  nutritionistId   String
+  doctorId         String
+  exerciseCoachId  String
+  lifestyle        Json
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  patient          User                   @relation("EnrollmentPatient", fields: [patientId], references: [id], onDelete: Restrict)
+  healthManager    User                   @relation("EnrollmentManager", fields: [healthManagerId], references: [id], onDelete: Restrict)
+  nutritionist     User                   @relation("EnrollmentNutritionist", fields: [nutritionistId], references: [id], onDelete: Restrict)
+  doctor           User                   @relation("EnrollmentDoctor", fields: [doctorId], references: [id], onDelete: Restrict)
+  exerciseCoach    User                   @relation("EnrollmentCoach", fields: [exerciseCoachId], references: [id], onDelete: Restrict)
+  bodyReports      BodyAssessment[]
+  posturePhotos    PosturePhoto[]
+  exerciseReports  ExercisePrescription[]
+  consentDocuments ConsentDocument[]
+  ocrDrafts        OcrDraft[]
+
+  @@index([healthManagerId, createdAt])
+  @@index([nutritionistId, createdAt])
+  @@index([doctorId, createdAt])
+  @@index([exerciseCoachId, createdAt])
+}
+
+model BodyAssessment {
+  id                   String         @id @default(cuid())
+  patientId            String
+  createdById          String
+  measuredAt           DateTime
+  heightCm             Float?
+  weightKg             Float?
+  bodyFatPct           Float?
+  muscleMassKg         Float?
+  skeletalMuscleMassKg Float?
+  hipCm                Float?
+  source               String         @default("MANUAL") @db.VarChar(32)
+  sourceDraftId        String?        @unique @db.VarChar(191)
+  waistCm              Float?
+  bmi                  Float?
+  createdAt            DateTime       @default(now())
+  enrollment           CareEnrollment @relation(fields: [patientId], references: [patientId], onDelete: Restrict)
+  createdBy            User           @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([patientId, measuredAt])
+}
+
+model PosturePhoto {
+  id            String         @id @default(cuid())
+  patientId     String
+  mediaAssetId  String         @unique
+  view          String         @db.VarChar(16)
+  faceProtected Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  enrollment    CareEnrollment @relation(fields: [patientId], references: [patientId], onDelete: Restrict)
+  mediaAsset    MediaAsset     @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@index([patientId, createdAt])
+}
+
+model ExerciseVideo {
+  id              String     @id @default(cuid())
+  title           String     @db.VarChar(120)
+  description     String?    @db.VarChar(500)
+  mediaAssetId    String     @unique
+  durationSeconds Int
+  active          Boolean    @default(true)
+  archivedAt      DateTime?
+  updatedAt       DateTime   @default(now()) @updatedAt
+  createdById     String
+  createdAt       DateTime   @default(now())
+  createdBy       User       @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  mediaAsset      MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+}
+
+model ExercisePrescription {
+  id            String                @id @default(cuid())
+  patientId     String
+  coachId       String
+  assessment    String                @db.Text
+  precautions   String?               @db.Text
+  items         Json
+  publishedAt   DateTime?
+  version       Int                   @default(1)
+  revisedFromId String?               @db.VarChar(191)
+  reviewedById  String?               @db.VarChar(191)
+  reviewedAt    DateTime?
+  createdAt     DateTime              @default(now())
+  enrollment    CareEnrollment        @relation(fields: [patientId], references: [patientId], onDelete: Restrict)
+  coach         User                  @relation(fields: [coachId], references: [id], onDelete: Restrict)
+  shares        ExerciseReportShare[]
+
+  @@index([patientId, createdAt])
+}
+
+model ExerciseReportShare {
+  id             String               @id @default(cuid())
+  reportId       String
+  nutritionistId String
+  tokenHash      String               @unique @db.VarChar(64)
+  requestKey     String?              @unique @db.VarChar(64)
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime             @default(now())
+  report         ExercisePrescription @relation(fields: [reportId], references: [id], onDelete: Restrict)
+  nutritionist   User                 @relation(fields: [nutritionistId], references: [id], onDelete: Restrict)
+
+  @@index([reportId, expiresAt, revokedAt])
 }
 
 model CalorieEstimate {
@@ -548,4 +767,245 @@ model CalorieEstimate {
   user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+model HealthRecordReviewReply {
+  id        String             @id @default(cuid())
+  reviewId  String
+  patientId String
+  comment   String             @db.Text
+  createdAt DateTime           @default(now())
+  review    HealthRecordReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  patient   User               @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([reviewId, createdAt])
+}
+
+model HealthReportDocument {
+  id           String         @id @default(cuid())
+  patientId    String
+  mediaAssetId String         @unique
+  category     String         @db.VarChar(32)
+  title        String         @db.VarChar(120)
+  createdById  String
+  createdAt    DateTime       @default(now())
+  patient      User           @relation("HealthReportPatient", fields: [patientId], references: [id], onDelete: Restrict, map: "HealthReportDocument_patientId_user_fkey")
+  mediaAsset   MediaAsset     @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  createdBy    User           @relation("HealthReportCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([patientId, category, createdAt])
+}
+
+model ConsentDocument {
+  id           String         @id @default(cuid())
+  patientId    String
+  mediaAssetId String         @unique
+  version      String         @db.VarChar(32)
+  createdById  String
+  createdAt    DateTime       @default(now())
+  enrollment   CareEnrollment @relation(fields: [patientId], references: [patientId], onDelete: Restrict)
+  mediaAsset   MediaAsset     @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  createdBy    User           @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([patientId, createdAt])
+}
+
+model OcrDraft {
+  cloudRequests    BodyCloudOcrRequest[]
+  id               String         @id @default(cuid())
+  patientId        String
+  mediaAssetId     String         @unique
+  provider         String         @db.VarChar(32)
+  status           String         @default("DRAFT") @db.VarChar(32)
+  fields           Json
+  sourceKind       String         @db.VarChar(32)
+  measuredAt       DateTime?
+  errorMessage     String?        @db.VarChar(500)
+  createdById      String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  confirmedAt      DateTime?
+  bodyAssessmentId String?        @unique
+  enrollment       CareEnrollment @relation(fields: [patientId], references: [patientId], onDelete: Restrict)
+  mediaAsset       MediaAsset     @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  createdBy        User           @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([patientId, createdAt])
+}
+
+
+// Only one-way phone-code and rate-key digests, never plaintext code/phone/token.
+model WechatCodeUse {
+  id         String   @id @db.Char(64)
+  kind       String   @db.VarChar(16)
+  requestKey String   @db.Char(64)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  @@index([requestKey, createdAt])
+  @@index([expiresAt])
+}
+
+
+// Immutable per-image customer authorization and one-shot invocation ledger.
+model BodyCloudOcrRequest {
+  id                 String   @id @default(cuid())
+  draftId            String
+  patientId          String
+  mediaAssetId       String
+  imageSha256        String   @db.Char(64)
+  inputSha256        String   @db.Char(64)
+  createdById        String
+  requestKey         String   @db.VarChar(96)
+  inputKey           String   @db.VarChar(700)
+  state              String   @default("WAITING_AUTH") @db.VarChar(24)
+  noticeVersion      String   @db.VarChar(32)
+  noticeSha256       String   @db.Char(64)
+  noticeText         String   @db.Text
+  provider           String   @db.VarChar(32)
+  model              String   @db.VarChar(64)
+  region             String   @db.VarChar(32)
+  expiresAt          DateTime
+  dataMinimizedAt    DateTime
+  authorizedById     String?
+  authorizedAt       DateTime?
+  sentAt             DateTime?
+  finishedAt         DateTime?
+  budgetDay          String?  @db.Char(10)
+  reservedMicro      Int      @default(0)
+  actualMicro        Int?
+  inputTokens        Int?
+  outputTokens       Int?
+  errorCode          String?  @db.VarChar(32)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  draft              OcrDraft @relation(fields: [draftId], references: [id], onDelete: Restrict)
+  @@unique([createdById, requestKey])
+  @@index([patientId, createdAt])
+  @@index([draftId, state])
+  @@index([state, sentAt])
+}
+
+// Micro-CNY integer accounting. This protects project calls, not the supplier account bill.
+model BodyCloudOcrBudget {
+  day           String   @id @db.Char(10)
+  limitMicro    Int
+  usedMicro     Int      @default(0)
+  heldMicro     Int      @default(0)
+  blocked       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Activity membership never creates or changes a care relationship or enrollment.
+enum YuanqizhanActivityStatus {
+  ACTIVE
+  ENDED
+}
+
+enum YuanqizhanMemberStatus {
+  ACTIVE
+  REMOVED
+}
+
+enum YuanqizhanRecordStatus {
+  DRAFT
+  SUBMITTED
+}
+
+model YuanqizhanActivity {
+  id           String                    @id @default(cuid())
+  title        String                    @db.VarChar(120)
+  description  String?                   @db.Text
+  durationDays Int                       @default(15)
+  status       YuanqizhanActivityStatus   @default(ACTIVE)
+  version      Int                       @default(1)
+  createdById  String                    @db.VarChar(191)
+  endedAt      DateTime?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  members      YuanqizhanMember[]
+  records      YuanqizhanDailyRecord[]
+
+  @@index([status, createdAt])
+}
+
+model YuanqizhanMember {
+  id           String                    @id @default(cuid())
+  activityId   String
+  patientId    String
+  status       YuanqizhanMemberStatus     @default(ACTIVE)
+  joinedAt     DateTime                  @default(now())
+  startDate    String                    @db.Char(10)
+  version      Int                       @default(1)
+  removedAt    DateTime?
+  updatedAt    DateTime                  @updatedAt
+  activity     YuanqizhanActivity        @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  patient      User                      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  records      YuanqizhanDailyRecord[]
+  revisions    YuanqizhanRecordRevision[]
+  photos       YuanqizhanPhoto[]
+
+  @@unique([activityId, patientId])
+  @@index([patientId, status, joinedAt])
+  @@index([activityId, status, joinedAt])
+}
+
+model YuanqizhanDailyRecord {
+  id           String                    @id @default(cuid())
+  activityId   String
+  memberId     String
+  patientId    String
+  date         String                    @db.Char(10)
+  dayNumber    Int
+  formType     String                    @db.VarChar(16)
+  schemaVersion String                   @db.VarChar(48)
+  formSnapshot Json
+  status       YuanqizhanRecordStatus     @default(DRAFT)
+  version      Int                       @default(1)
+  answers      Json
+  photos       Json
+  submittedAt  DateTime?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  activity     YuanqizhanActivity        @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  member       YuanqizhanMember          @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  patient      User                      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  revisions    YuanqizhanRecordRevision[]
+
+  @@unique([activityId, patientId, date])
+  @@index([memberId, date])
+  @@index([patientId, date])
+}
+
+model YuanqizhanRecordRevision {
+  id           String                    @id @default(cuid())
+  recordId     String
+  memberId     String
+  version      Int
+  status       YuanqizhanRecordStatus
+  answers      Json
+  photos       Json
+  submittedAt  DateTime?
+  requestKey   String                    @db.VarChar(96)
+  requestFingerprint String              @db.Char(64)
+  createdAt    DateTime                  @default(now())
+  record       YuanqizhanDailyRecord     @relation(fields: [recordId], references: [id], onDelete: Restrict)
+  member       YuanqizhanMember          @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@unique([recordId, version])
+  @@unique([memberId, requestKey])
+}
+
+// Each upload is immutable; multiple versions of a slot retain every original.
+model YuanqizhanPhoto {
+  id           String                    @id @default(cuid())
+  memberId     String
+  date         String                    @db.Char(10)
+  slot         String                    @db.VarChar(32)
+  assetId      String                    @unique
+  createdAt    DateTime                  @default(now())
+  member       YuanqizhanMember          @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  asset        MediaAsset                @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@index([memberId, date, slot])
 }

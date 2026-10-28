@@ -9,12 +9,12 @@
 			<view class="logo-section">
 				<image 
 					class="logo" 
-					src="/static/logo.png" 
+					src="/static/logo.png" alt="MedTalent健康数字助手" aria-label="MedTalent健康数字助手" 
 					mode="aspectFit"
 					:class="{ 'logo-animate': showLogo }"
 				></image>
 				<view class="app-name" :class="{ 'name-animate': showName }">
-					数字减重助手
+					MedTalent健康数字助手
 				</view>
 				<view class="app-slogan" :class="{ 'slogan-animate': showSlogan }">
 					专业陪伴，让健康管理更从容
@@ -41,6 +41,7 @@
 
 <script>
 import store from '../../store/index.js'
+import { navigateAfterLogin } from '../../utils/auth-navigation.js'
 
 export default {
 	data() {
@@ -92,63 +93,16 @@ export default {
 		// 检查登录状态并跳转
 		async checkLoginAndNavigate() {
 			try {
-				console.log('开始检查自动登录状态...')
-				
-				// 增加延迟确保真机环境下的稳定性
-				await new Promise(resolve => setTimeout(resolve, 300))
-				
-				// 检查自动登录
-				const isAutoLoginSuccess = await store.checkAutoLogin()
-				console.log('自动登录检查结果:', isAutoLoginSuccess)
-				
-				if (isAutoLoginSuccess) {
-					const userInfo = store.getUserInfo()
-					console.log('启动页自动登录成功，用户信息:', userInfo)
-					
-					// 增加延迟确保页面跳转的稳定性
-					await new Promise(resolve => setTimeout(resolve, 200))
-					
-					if (userInfo.role === 'doctor') {
-						console.log('跳转到医生主页')
-						// 医生跳转到医生主页
-						uni.reLaunch({
-							url: '/pages/doctor/index',
-							success: () => {
-								console.log('成功跳转到医生主页')
-							},
-							fail: (err) => {
-								console.error('跳转到医生主页失败:', err)
-								this.fallbackToLogin()
-							}
-						})
-					} else if (userInfo.role === 'patient') {
-						console.log('跳转到患者主页')
-						// 患者跳转到患者主页
-						uni.reLaunch({
-							url: '/pages/patient/index',
-							success: () => {
-								console.log('成功跳转到患者主页')
-							},
-							fail: (err) => {
-								console.error('跳转到患者主页失败:', err)
-								this.fallbackToLogin()
-							}
-						})
-					} else {
-						console.log('用户角色未知，跳转到登录页面')
-						this.fallbackToLogin()
-					}
-				} else {
-					console.log('启动页自动登录失败，跳转到登录页面')
-					this.fallbackToLogin()
+				if (await store.checkAutoLogin()) {
+					if (navigateAfterLogin(store.getUserInfo())) return
+					store.logout()
 				}
+				this.fallbackToLogin()
 			} catch (error) {
-				console.error('启动页登录检查失败:', error)
-				// 出错时跳转到登录页面
 				this.fallbackToLogin()
 			}
 		},
-		
+
 		// 回退到登录页面
 		fallbackToLogin() {
 			console.log('执行回退到登录页面')

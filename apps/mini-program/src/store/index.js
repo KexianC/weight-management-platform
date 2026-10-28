@@ -97,6 +97,8 @@ class Store {
 	
 	// 初始化状态
 	init() {
+		if (this.initialized) return
+		this.initialized = true
 		// 从本地存储恢复状态
 		this.restoreFromStorage()
 		
@@ -114,7 +116,7 @@ class Store {
 		try {
 			// 恢复用户信息
 			const userInfo = getStorage('userInfo')
-			if (userInfo) {
+			if (userInfo && (getStorage('token') || getStorage('refreshToken'))) {
 				this.setState('user', { ...normalizeUserRole(userInfo), isLogin: true })
 			}
 			
@@ -385,7 +387,7 @@ class Store {
 			const now = Math.floor(Date.now() / 1000)
 			
 			// 检查token是否过期
-			if (payload.exp && payload.exp < now) {
+			if (payload.exp && payload.exp <= now) {
 				console.log('Token已过期')
 				return false
 			}
@@ -399,7 +401,7 @@ class Store {
 	
 	// 自定义base64解码函数（微信小程序兼容）
 	base64Decode(str) {
-		const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+		const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
 		let result = ''
 		let i = 0
 		
@@ -421,27 +423,12 @@ class Store {
 	
 	// 检查是否登录
 	isLogin() {
-		// 检查登录状态
-		if (!this.state.user.isLogin) {
-			return false
-		}
-		
-		// 检查token是否存在
+		if (!this.state.user.isLogin) return false
 		const token = getStorage('token')
-		if (!token) {
-			// token不存在，清除登录状态
-			this.logout()
-			return false
-		}
-		
-		// 验证token有效性
-		if (!this.validateToken(token)) {
-			// token无效，清除登录状态
-			this.logout()
-			return false
-		}
-		
-		return true
+		// Expired access tokens are recoverable by the API refresh flow. Reading
+		// cached session state must not discard a refresh token or page drafts.
+		if (getStorage('refreshToken')) return true
+		return Boolean(token && this.validateToken(token))
 	}
 	
 	// 自动登录检查
@@ -450,13 +437,12 @@ class Store {
 			const token = getStorage('token')
 			const userInfo = getStorage('userInfo')
 			
-			if (!token || !userInfo) {
+			if ((!token && !getStorage('refreshToken')) || !userInfo) {
 				return false
 			}
 			
 			// 验证token有效性
-			if (!this.validateToken(token)) {
-				this.logout()
+			if (!getStorage('refreshToken') && !this.validateToken(token)) {
 				return false
 			}
 			
@@ -477,11 +463,11 @@ class Store {
 				}
 			}
 			
-			console.log('自动登录成功:', userInfo.name)
+			// The API, not this cached-state check, authenticates each request.
 			return true
 		} catch (error) {
 			console.error('自动登录检查失败:', error)
-			this.logout()
+			// A transient storage/platform error must not destroy the saved session.
 			return false
 		}
 	}

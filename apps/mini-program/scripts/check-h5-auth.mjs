@@ -1,12 +1,14 @@
+import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const login = readFileSync(resolve(import.meta.dirname, '..', 'src/pages/login/login.vue'), 'utf8')
-const h5ExcludedWechatSection = /<!-- #ifdef MP-WEIXIN -->[\s\S]*微信快速登录[\s\S]*<!-- #endif -->/
-
-if (!h5ExcludedWechatSection.test(login)) {
-  console.error('H5 登录契约检查失败：微信快捷登录必须只在 MP-WEIXIN 条件块内渲染')
-  process.exit(1)
-}
-
-console.log('H5 登录契约检查通过：H5 仅保留密码和短信登录，微信快捷登录仅限微信小程序')
+const blocks = [...login.matchAll(/<!-- #ifdef MP-WEIXIN -->([\s\S]*?)<!-- #endif -->/g)].map(match => match[1])
+const phoneButtons = blocks.filter(block => /open-type="getPhoneNumber"/.test(block))
+assert.equal(phoneButtons.length, 1, 'Exactly one native phone-authorization button must be in a WeChat-only block')
+assert.match(phoneButtons[0], /@getphonenumber="handleWechatPhoneLogin"/)
+const h5Template = login.slice(0, login.indexOf('</template>')).replace(/<!-- #ifdef MP-WEIXIN -->[\s\S]*?<!-- #endif -->/g, '')
+assert.doesNotMatch(h5Template, /open-type="getPhoneNumber"|@getphonenumber=/, 'H5 must not render a native phone authorization button')
+assert.match(h5Template, /loginType/)
+assert.doesNotMatch(login, /@tap="handleWechatLogin"|@getphonenumber="handleWechatPhoneBinding"/, 'Obsolete two-stage account binding must not be rendered')
+console.log('H5 auth platform checks PASS: password/SMS retained; single phone authorization is WeChat-only')

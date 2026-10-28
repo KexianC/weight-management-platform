@@ -19,6 +19,7 @@ import type { Request } from 'express';
 import type { Prisma } from '@prisma/client';
 import { ClinicalService } from './clinical';
 import { assertTaskTransition, type TaskState } from './domain';
+import { businessProjection } from './business-projection';
 import { PrismaService } from './prisma.service';
 
 const taskTypes = ['WEIGHT', 'DIET', 'EXERCISE', 'MEDICATION', 'QUESTIONNAIRE', 'GENERAL'] as const;
@@ -64,11 +65,13 @@ export class TasksService {
 
   private async actor(req: Request) { return this.clinical.actor(req); }
 
-  private async taskForActor(req: Request, id: string) {
+  private async taskForActor(req: Request, id: string, readOnly = false) {
     const actor = await this.actor(req);
-    if (actor.role !== 'PATIENT') this.clinical.assertPractitioner(actor);
+    if (actor.role !== 'PATIENT' && actor.role !== 'HEALTH_MANAGER') this.clinical.assertPractitioner(actor);
     const task = await this.prisma.patientTask.findUnique({ where: { id } });
     if (!task) throw new NotFoundException('任务不存在');
+    if (actor.role === 'HEALTH_MANAGER' && !readOnly) throw new ForbiddenException('健管师全量任务权限仅为只读');
+    if (actor.role === 'HEALTH_MANAGER' && readOnly) { await this.clinical.assertCare(actor,task.patientId); return {actor,task}; }
     if (actor.role === 'PATIENT' ? task.patientId !== actor.sub : task.assignedById !== actor.sub) throw new NotFoundException('任务不存在');
     return { actor, task };
   }
@@ -80,17 +83,19 @@ export class TasksService {
         where: { patientId: actor.sub, status: 'PENDING', dueAt: { lt: new Date() } },
         data: { status: 'OVERDUE' },
       });
-    } else {
+    } else if (actor.role !== 'HEALTH_MANAGER') {
       this.clinical.assertPractitioner(actor);
       await this.prisma.patientTask.updateMany({
         where: { assignedById: actor.sub, status: 'PENDING', dueAt: { lt: new Date() } },
         data: { status: 'OVERDUE' },
       });
       if (query.patientId) await this.clinical.assertCare(actor, query.patientId);
+    } else if (query.patientId) {
+      await this.clinical.assertCare(actor, query.patientId);
     }
     const where = actor.role === 'PATIENT'
       ? { patientId: actor.sub }
-      : { assignedById: actor.sub, ...(query.patientId ? { patientId: query.patientId } : {}) };
+      : actor.role === 'HEALTH_MANAGER' ? { patient: { status: 'ACTIVE' as const }, ...(query.patientId ? { patientId: query.patientId } : {}) } : { assignedById: actor.sub, ...(query.patientId ? { patientId: query.patientId } : {}) };
     const filters = { ...where, ...(query.status ? { status: query.status } : {}), ...(query.taskType ? { taskType: query.taskType } : {}) };
     const [items, total] = await Promise.all([
       this.prisma.patientTask.findMany({
@@ -102,7 +107,7 @@ export class TasksService {
       }),
       this.prisma.patientTask.count({ where: filters }),
     ]);
-    return { items, total, page: Number(query.page), pageSize: Number(query.pageSize) };
+    return { items:businessProjection(items), total, page: Number(query.page), pageSize: Number(query.pageSize) };
   }
 
   async create(req: Request, dto: CreateTaskDto, routePatientId?: string) {
@@ -126,7 +131,7 @@ export class TasksService {
         },
       });
       await tx.notification.create({
-        data: { userId: patientId, type: 'TASK', priority: dto.priority, title: '收到新的健康任务', content: dto.title, relatedType: 'PATIENT_TASK', relatedId: task.id, actionPath: `/pages/patient/follow?taskId=${task.id}` },
+        data: { userId: patientId, type: 'TASK', priority: dto.priority, title: '收到新的健康任务', content: dto.title, relatedType: 'PATIENT_TASK', relatedId: task.id, actionPath: `/pages/common/task-detail?id=${task.id}` },
       });
       await tx.auditLog.create({ data: { actorId: actor.sub, action: 'TASK_CREATE', resourceType: 'PATIENT_TASK', resourceId: task.id, metadata: { patientId } } });
       return task;
@@ -134,8 +139,8 @@ export class TasksService {
   }
 
   async detail(req: Request, id: string) {
-    const { task } = await this.taskForActor(req, id);
-    return task;
+    const { task } = await this.taskForActor(req, id, true);
+    return businessProjection(task);
   }
 
   async update(req: Request, id: string, dto: UpdateTaskDto) {

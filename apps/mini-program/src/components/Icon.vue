@@ -42,6 +42,8 @@ export default {
       }
       
       const colorMap = {
+        '$patient-primary': '#2B5FFF',
+        '$patient-accent': '#00ADBE',
         '$primary-color': '#168FB5',
         '$secondary-color': '#D8F1F7',
         '$accent-color': '#F28B64',
@@ -84,6 +86,8 @@ export default {
         '#FFF': '#FFFFFF'
       }
       const colorFilters = {
+        '#2B5FFF': 'brightness(0) saturate(100%) invert(31%) sepia(98%) saturate(3200%) hue-rotate(221deg) brightness(101%) contrast(101%)',
+        '#00ADBE': 'brightness(0) saturate(100%) invert(55%) sepia(85%) saturate(2250%) hue-rotate(143deg) brightness(93%) contrast(101%)',
         '#168FB5': 'brightness(0) saturate(100%) invert(47%) sepia(76%) saturate(706%) hue-rotate(151deg) brightness(88%) contrast(91%)',
         '#D8F1F7': 'brightness(0) saturate(100%) invert(95%) sepia(11%) saturate(726%) hue-rotate(151deg) brightness(101%) contrast(94%)',
         '#F28B64': 'brightness(0) saturate(100%) invert(69%) sepia(49%) saturate(1025%) hue-rotate(324deg) brightness(99%) contrast(91%)',

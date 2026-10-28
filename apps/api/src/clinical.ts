@@ -37,6 +37,7 @@ import { randomInt } from 'node:crypto';
 import type { Request, Response } from 'express';
 import * as QRCode from 'qrcode';
 import { AuthService, type Actor } from './auth';
+import { businessProjection } from './business-projection';
 import { PrismaService } from './prisma.service';
 
 class PatientQueryDto {
@@ -86,7 +87,7 @@ export class CreateClinicalPatientDto {
   targetWeightKg?: number;
 
   @IsBoolean()
-  @Equals(true, { message: '请先确认患者已授权创建账号并建立照护关系' })
+  @Equals(true, { message: '请先确认患者已授权创建账号并建立服务关系' })
   patientAuthorizationConfirmed!: true;
 }
 
@@ -192,6 +193,12 @@ export class ClinicalService {
   }
 
   async assertCare(actor: Actor, patientId: string) {
+    if (actor.role === 'HEALTH_MANAGER') {
+      const patient = await this.prisma.user.findUnique({where:{id:patientId},select:{role:true,status:true}});
+      if (!patient || patient.role !== 'PATIENT' || patient.status !== 'ACTIVE') throw new NotFoundException('客户不存在或已停用');
+      await this.prisma.auditLog.create({data:{actorId:actor.sub,action:'HM_GLOBAL_BUSINESS_READ',resourceType:'PATIENT',resourceId:patientId}});
+      return;
+    }
     if (actor.role === 'PATIENT' && actor.sub === patientId) return;
     if (!['DOCTOR', 'NUTRITIONIST'].includes(actor.role)) throw new ForbiddenException('无权访问患者健康数据');
     await this.assertActiveRelation(patientId, actor.sub);
@@ -201,7 +208,7 @@ export class ClinicalService {
     const relation = await this.prisma.careRelation.findFirst({
       where: { patientId, practitionerId, status: 'ACTIVE' },
     });
-    if (!relation) throw new ForbiddenException('不存在有效照护关系');
+    if (!relation) throw new ForbiddenException('不存在有效服务关系');
     return relation;
   }
 
@@ -289,8 +296,8 @@ export class ClinicalService {
     const rows = await this.prisma.careSummary.findMany({
       where: { patientId },
       include: { practitioner: { include: { practitionerProfile: true } } },
-      orderBy: { publishedAt: 'desc' },
-      take: 100,
+      orderBy: [{ publishedAt: 'desc' }, { id: 'asc' }],
+      ...(actor.role === 'HEALTH_MANAGER' ? {} : { take: 100 }),
     });
     return rows.map((row) => this.careSummaryView(row));
   }
@@ -342,7 +349,7 @@ export class ClinicalService {
       const relation = await tx.careRelation.findFirst({
         where: { patientId, practitionerId: actor.sub, status: 'ACTIVE' },
       });
-      if (!relation) throw new ForbiddenException('不存在有效照护关系');
+      if (!relation) throw new ForbiddenException('不存在有效服务关系');
       const unique = {
         patientId_practitionerId_periodType_periodStart: {
           patientId,
@@ -423,11 +430,13 @@ export class ClinicalService {
         role: 'PATIENT',
         status: 'ACTIVE',
         patientRelations: { some: { practitionerId: actor.sub, status: 'ACTIVE' } },
-        ...(search ? { OR: [{ displayName: { contains: search } }, { phone: { contains: search } }] } : {}),
+        ...(search ? actor.role === 'NUTRITIONIST'
+          ? { id: { endsWith: search.replace(/^客户/, '').toLowerCase() } }
+          : { OR: [{ displayName: { contains: search } }, { phone: { contains: search } }] } : {}),
       },
       include: this.patientInclude(actor.sub),
-      orderBy: { updatedAt: 'desc' },
-      take: 500,
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      ...(actor.role === 'HEALTH_MANAGER' ? {} : { take: 500 }),
     });
     let items = rows.map((row) => this.patientView(row));
     if (query.status === 'active') items = items.filter((item) => item.active);
@@ -440,181 +449,8 @@ export class ClinicalService {
     return { items, total, page, pageSize };
   }
 
-  async createPatient(actor: Actor, dto: CreateClinicalPatientDto, req?: Request) {
-    this.assertPractitioner(actor);
-    const phone = normalizePhone(dto.phone);
-    const ipAddress = req?.ip || req?.socket?.remoteAddress;
-
-    const persist = () => this.prisma.$transaction(async (tx) => {
-      let accountCreated = false;
-      let relationCreated = false;
-      let relationActivated = false;
-      let patient = await tx.user.findUnique({
-        where: { phone_role: { phone, role: 'PATIENT' } },
-        include: { patientProfile: true },
-      });
-
-      if (patient) {
-        if (patient.status !== 'ACTIVE') {
-          throw new ConflictException('该患者账号已停用，无法建立照护关系');
-        }
-        if (!patient.patientProfile) {
-          await tx.patientProfile.create({ data: { userId: patient.id } });
-        }
-      } else {
-        accountCreated = true;
-        patient = await tx.user.create({
-          data: {
-            phone,
-            passwordHash: null,
-            displayName: dto.displayName?.trim() || `尾号${phone.slice(-4)}患者`,
-            role: 'PATIENT',
-            patientProfile: {
-              create: {
-                gender: dto.gender,
-                birthDate: dto.birthDate ? new Date(dto.birthDate) : undefined,
-                heightCm: dto.heightCm,
-                initialWeightKg: dto.initialWeightKg,
-                targetWeightKg: dto.targetWeightKg,
-              },
-            },
-          },
-          include: { patientProfile: true },
-        });
-
-        await tx.auditLog.create({
-          data: {
-            actorId: actor.sub,
-            action: 'PATIENT_ACCOUNT_AUTO_REGISTER',
-            resourceType: 'USER',
-            resourceId: patient.id,
-            ipAddress,
-            metadata: {
-              patientAuthorizationConfirmed: true,
-              authentication: 'SMS_LOGIN_OR_PASSWORD_RESET',
-            },
-          },
-        });
-      }
-
-      const existingRelation = await tx.careRelation.findUnique({
-        where: {
-          patientId_practitionerId: {
-            patientId: patient.id,
-            practitionerId: actor.sub,
-          },
-        },
-      });
-
-      let relation = existingRelation;
-      if (!existingRelation) {
-        relationCreated = true;
-        relationActivated = true;
-        relation = await tx.careRelation.create({
-          data: {
-            patientId: patient.id,
-            practitionerId: actor.sub,
-            status: 'ACTIVE',
-            bindMethod: 'PRACTITIONER_ASSISTED',
-            note: '医生/营养师确认已取得患者线下授权',
-          },
-        });
-      } else if (existingRelation.status !== 'ACTIVE') {
-        const activated = await tx.careRelation.updateMany({
-          where: { id: existingRelation.id, status: existingRelation.status },
-          data: {
-            status: 'ACTIVE',
-            bindMethod: 'PRACTITIONER_ASSISTED',
-            note: '医生/营养师确认已取得患者线下授权',
-            endedAt: null,
-            endedReason: null,
-          },
-        });
-        relation = await tx.careRelation.findUnique({ where: { id: existingRelation.id } });
-        if (!relation) throw new ConflictException('照护关系创建失败，请重试');
-        if (activated.count === 1) {
-          relationActivated = true;
-        } else if (relation.status !== 'ACTIVE') {
-          throw new ConflictException('照护关系状态已变化，请重试');
-        }
-      }
-
-      if (!relation) throw new ConflictException('照护关系创建失败，请重试');
-
-      if (relationActivated) {
-        await tx.notification.create({
-          data: {
-            userId: patient.id,
-            type: 'RELATION',
-            title: '照护关系已建立',
-            content: '医生/营养师已将您加入照护列表，请登录后完善账号资料。',
-            relatedType: 'CARE_RELATION',
-            relatedId: relation.id,
-            actionPath: '/pages/patient/index',
-          },
-        });
-        await tx.auditLog.create({
-          data: {
-            actorId: actor.sub,
-            action: existingRelation ? 'CARE_RELATION_REACTIVATE_ASSISTED' : 'CARE_RELATION_CREATE_ASSISTED',
-            resourceType: 'CARE_RELATION',
-            resourceId: relation.id,
-            ipAddress,
-            metadata: {
-              patientId: patient.id,
-              patientAuthorizationConfirmed: true,
-              bindMethod: 'PRACTITIONER_ASSISTED',
-            },
-          },
-        });
-      }
-
-      const patientConsent = await tx.consent.findFirst({
-        where: {
-          userId: patient.id,
-          scope: 'TERMS_AND_PRIVACY',
-          revokedAt: null,
-        },
-        select: { id: true },
-      });
-      const row = await tx.user.findUnique({
-        where: { id: patient.id },
-        include: this.patientInclude(actor.sub),
-      });
-      if (!row) throw new ConflictException('患者账号创建失败，请重试');
-
-      const patientConsentRequired = !patientConsent;
-      return {
-        patient: this.patientView(row),
-        relation,
-        accountCreated,
-        relationCreated,
-        relationActivated,
-        passwordSetupRequired: !patient.passwordHash,
-        patientConsentRequired,
-        nextStep: patientConsentRequired
-          ? 'PATIENT_SMS_LOGIN_AND_COMPLETE_ONBOARDING'
-          : accountCreated
-            ? 'PATIENT_SMS_LOGIN_OR_PASSWORD_RESET'
-            : 'ACCOUNT_REUSED',
-        message: accountCreated
-          ? '患者账号与照护关系已创建，请患者使用手机号验证码登录后完善资料并按页面提示确认协议。'
-          : relationActivated
-            ? '已使用现有患者账号并建立照护关系。'
-            : '该患者已在您的照护列表中。',
-      };
-    });
-
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        return await persist();
-      } catch (error) {
-        const retryable = error instanceof Prisma.PrismaClientKnownRequestError
-          && ['P2002', 'P2034'].includes(error.code);
-        if (!retryable || attempt === 1) throw error;
-      }
-    }
-    throw new ConflictException('患者账号创建失败，请重试');
+  async createPatient(_actor: Actor, _dto: CreateClinicalPatientDto, _req?: Request): Promise<any> {
+    throw new ForbiddenException('客户账号请由健康管理师通过建档流程创建');
   }
 
   async patient(actor: Actor, patientId: string) {
@@ -625,22 +461,22 @@ export class ClinicalService {
       include: {
         ...this.patientInclude(actor.sub),
         healthRecords: { orderBy: { measuredAt: 'desc' }, take: 100 },
-        receivedTasks: { where: { assignedById: actor.sub }, orderBy: { createdAt: 'desc' }, take: 100 },
-        followUpsAsPatient: { where: { practitionerId: actor.sub }, orderBy: { scheduledAt: 'desc' }, take: 100 },
+        receivedTasks: { where: actor.role === 'HEALTH_MANAGER' ? {} : { assignedById: actor.sub }, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], ...(actor.role === 'HEALTH_MANAGER' ? {} : { take: 100 }) },
+        followUpsAsPatient: { where: actor.role === 'HEALTH_MANAGER' ? {} : { practitionerId: actor.sub }, orderBy: [{ scheduledAt: 'desc' }, { id: 'asc' }], ...(actor.role === 'HEALTH_MANAGER' ? {} : { take: 100 }) },
       },
     });
-    if (!row || row.role !== 'PATIENT') throw new NotFoundException('患者不存在');
+    if (!row || row.role !== 'PATIENT' || (actor.role === 'HEALTH_MANAGER' && row.status !== 'ACTIVE')) throw new NotFoundException('患者不存在或已停用');
     return {
       ...this.patientView(row),
-      healthRecords: row.healthRecords.map((record) => ({
+      healthRecords: businessProjection(row.healthRecords).map((record) => ({
         ...record,
         weightKg: asNumber(record.weightKg),
         waistCm: asNumber(record.waistCm),
         bodyFatPct: asNumber(record.bodyFatPct),
         caloriesKcal: asNumber(record.caloriesKcal),
       })),
-      tasks: row.receivedTasks,
-      followUps: row.followUpsAsPatient,
+      tasks: businessProjection(row.receivedTasks),
+      followUps: businessProjection(row.followUpsAsPatient),
     };
   }
 
@@ -702,9 +538,10 @@ export class ClinicalService {
   }
 
   async patientArchive(actor: Actor, patientId: string) {
-    this.assertPractitioner(actor);
-    await this.assertActiveRelation(patientId, actor.sub);
+    if (actor.role === 'HEALTH_MANAGER') await this.assertCare(actor, patientId);
+    else { this.assertPractitioner(actor); await this.assertActiveRelation(patientId, actor.sub); }
     const archive = await this.prisma.patientArchive.findUnique({ where: { patientId } });
+    if (actor.role === 'HEALTH_MANAGER') await this.prisma.auditLog.create({ data: { actorId: actor.sub, action: 'HM_GLOBAL_ARCHIVE_READ', resourceType: 'PATIENT_ARCHIVE', resourceId: patientId, metadata: { archivePresent: !!archive } } });
     return { archive: archive ? this.archiveView(archive) : null };
   }
 
@@ -720,7 +557,7 @@ export class ClinicalService {
           where: { patientId, practitionerId: actor.sub, status: 'ACTIVE' },
           select: { id: true },
         });
-        if (!relation) throw new ForbiddenException('不存在有效照护关系');
+        if (!relation) throw new ForbiddenException('不存在有效服务关系');
 
         const existing = await tx.patientArchive.findUnique({ where: { patientId } });
         if (!existing && expectedUpdatedAt) {
@@ -797,39 +634,55 @@ export class ClinicalService {
     }
   }
 
-  async patientRecords(actor: Actor, patientId: string, recordType?: string) {
+  async patientRecords(actor: Actor, patientId: string, recordType?: string, pageInput?: string, sizeInput?: string) {
     await this.assertCare(actor, patientId);
-    const allowed = ['WEIGHT', 'DIET', 'EXERCISE', 'MEDICATION', 'QUESTIONNAIRE', 'GENERAL', 'BLOOD_PRESSURE', 'SYMPTOM'];
-    return this.prisma.healthRecord.findMany({
-      where: { patientId, ...(recordType && allowed.includes(recordType.toUpperCase()) ? { recordType: recordType.toUpperCase() as any } : {}) },
-      orderBy: { measuredAt: 'desc' },
-      take: 200,
-    });
+    const paginated=pageInput!==undefined||sizeInput!==undefined;
+    const page=Number(pageInput??1),pageSize=Number(sizeInput??200);
+    if (!Number.isInteger(page)||page<1||!Number.isInteger(pageSize)||pageSize<1||pageSize>200) throw new BadRequestException('分页须为正整数，每页最多200条');
+    const allowed=['WEIGHT','DIET','EXERCISE','MEDICATION','QUESTIONNAIRE','GENERAL','BLOOD_PRESSURE','SYMPTOM','SLEEP'];
+    const where:Prisma.HealthRecordWhereInput={patientId,...(recordType&&allowed.includes(recordType.toUpperCase())?{recordType:recordType.toUpperCase() as any}:{})};
+    const rows=await this.prisma.healthRecord.findMany({where,include:{assets:{where:{status:'READY'},select:{id:true,mimeType:true,createdAt:true}},reviews:{include:{practitioner:{select:{id:true,displayName:true,role:true}},replies:true},orderBy:{createdAt:'asc'}}},orderBy:[{measuredAt:'desc'},{id:'asc'}],skip:(page-1)*pageSize,take:pageSize});
+    const items=actor.role==='NUTRITIONIST'?rows.filter(r=>['WEIGHT','DIET','SLEEP'].includes(r.recordType)).map(r=>({id:r.id,patientId:r.patientId,recordType:r.recordType,measuredAt:r.measuredAt,weightKg:r.weightKg,waistCm:r.waistCm,hipCm:r.hipCm,bodyFatPct:r.bodyFatPct,sleepHours:r.sleepHours,mealType:r.mealType,caloriesKcal:r.caloriesKcal,caloriesSource:r.caloriesSource,source:r.source})):businessProjection(rows);
+    if (!paginated) return items;
+    const total=await this.prisma.healthRecord.count({where});
+    return {items,total,page,pageSize,hasMore:page*pageSize<total};
   }
 
   async weightTrend(actor: Actor, patientId: string) {
     await this.assertCare(actor, patientId);
     const rows = await this.prisma.healthRecord.findMany({
       where: { patientId, recordType: 'WEIGHT', weightKg: { not: null } },
-      orderBy: { measuredAt: 'asc' },
-      take: 180,
+      orderBy: [{ measuredAt: 'asc' }, { id: 'asc' }],
+      ...(actor.role === 'HEALTH_MANAGER' ? {} : { take: 180 }),
     });
     return rows.map((row) => ({ id: row.id, measuredAt: row.measuredAt, weightKg: asNumber(row.weightKg), bodyFatPct: asNumber(row.bodyFatPct) }));
   }
 
   async patientStats(actor: Actor, patientId: string) {
     const patient = await this.patient(actor, patientId);
-    const completedFollowUps = patient.followUps.filter((item: any) => item.status === 'COMPLETED').length;
+    const [totalRecords, statusGroups] = await Promise.all([
+      this.prisma.healthRecord.count({ where: { patientId } }),
+      this.prisma.followUp.groupBy({
+        by: ['status'],
+        where: { patientId, practitionerId: actor.sub },
+        _count: { _all: true },
+      }),
+    ]);
+    const statusCounts = Object.fromEntries(statusGroups.map((group) => [group.status, group._count._all]));
+    const completedFollowUps = Number(statusCounts.COMPLETED ?? 0);
+    const totalFollowUps = ['SCHEDULED', 'IN_PROGRESS', 'OVERDUE', 'COMPLETED']
+      .reduce((total, status) => total + Number(statusCounts[status] ?? 0), 0);
     return {
       currentWeightKg: patient.currentWeightKg,
       targetWeightKg: patient.targetWeightKg,
       bmi: patient.bmi,
       active: patient.active,
       attention: patient.attention,
-      totalRecords: patient.healthRecords.length,
-      totalFollowUps: patient.followUps.length,
+      totalRecords,
+      totalFollowUps,
       completedFollowUps,
-      followUpCompletionRate: patient.followUps.length ? Math.round((completedFollowUps / patient.followUps.length) * 100) : 0,
+      cancelledFollowUps: Number(statusCounts.CANCELLED ?? 0),
+      followUpCompletionRate: totalFollowUps ? Math.round((completedFollowUps / totalFollowUps) * 100) : 0,
     };
   }
 
@@ -838,9 +691,9 @@ export class ClinicalService {
     const items = list.items;
     const thirtyDaysAgo = Date.now() - 30 * 86_400_000;
     const pendingFollowUps = await this.prisma.followUp.count({
-      where: { practitionerId: actor.sub, status: { in: ['SCHEDULED', 'IN_PROGRESS', 'OVERDUE'] } },
+      where: { practitionerId: actor.sub, patient: { status: 'ACTIVE' }, status: { in: ['SCHEDULED', 'IN_PROGRESS', 'OVERDUE'] } },
     });
-    const completedFollowUps = await this.prisma.followUp.count({ where: { practitionerId: actor.sub, status: 'COMPLETED' } });
+    const completedFollowUps = await this.prisma.followUp.count({ where: { practitionerId: actor.sub, patient: { status: 'ACTIVE' }, status: 'COMPLETED' } });
     const totalFollowUps = pendingFollowUps + completedFollowUps;
     return {
       totalPatients: list.total,
@@ -940,6 +793,8 @@ export class CareService {
           where: { patientId_practitionerId: { patientId: actor.sub, practitionerId: invite.practitionerId } },
         });
         if (existing?.status === 'ACTIVE') return existing;
+        const managed = await tx.careEnrollment.findUnique({ where: { patientId: actor.sub }, select: { id: true } });
+        if (managed || invite.practitioner.role === 'NUTRITIONIST') throw new ForbiddenException('营养师及管理客户由健管师分配，请联系健管师');
 
         let relation;
         if (existing) {
@@ -982,7 +837,7 @@ export class CareService {
             userId: invite.practitionerId,
             type: 'RELATION',
             title: '新患者已绑定',
-            content: '一位患者已通过绑定码加入您的照护列表。',
+            content: '一位患者已通过绑定码加入您的患者列表。',
             relatedType: 'CARE_RELATION',
             relatedId: relation.id,
             actionPath: `/pages/doctor/patients?patientId=${actor.sub}`,
@@ -1022,13 +877,13 @@ export class CareService {
         ? { patientId: actor.sub, practitionerId: peerId, status: 'ACTIVE' }
         : { patientId: peerId, practitionerId: actor.sub, status: 'ACTIVE' },
     });
-    if (!relation) throw new NotFoundException('有效照护关系不存在');
+    if (!relation) throw new NotFoundException('有效服务关系不存在');
     return this.end(actor, relation.id, reason);
   }
 
   async end(actor: Actor, relationId: string, reason?: string) {
     const relation = await this.prisma.careRelation.findUnique({ where: { id: relationId } });
-    if (!relation || ![relation.patientId, relation.practitionerId].includes(actor.sub)) throw new NotFoundException('照护关系不存在');
+    if (!relation || ![relation.patientId, relation.practitionerId].includes(actor.sub)) throw new NotFoundException('服务关系不存在');
     if (relation.status !== 'ACTIVE') return relation;
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
@@ -1038,7 +893,7 @@ export class CareService {
       });
       if (ended.count !== 1) {
         const current = await tx.careRelation.findUnique({ where: { id: relation.id } });
-        if (!current) throw new NotFoundException('照护关系不存在');
+        if (!current) throw new NotFoundException('服务关系不存在');
         return current;
       }
       await tx.followUp.updateMany({
@@ -1059,11 +914,11 @@ export class CareService {
       });
       const otherUserId = actor.sub === relation.patientId ? relation.practitionerId : relation.patientId;
       await tx.notification.create({
-        data: { userId: otherUserId, type: 'RELATION', title: '照护关系已结束', content: '对方已结束照护关系，历史记录仍可审计查看。', relatedType: 'CARE_RELATION', relatedId: relation.id },
+        data: { userId: otherUserId, type: 'RELATION', title: '服务关系已结束', content: '对方已结束服务关系，历史记录仍可审计查看。', relatedType: 'CARE_RELATION', relatedId: relation.id },
       });
       await tx.auditLog.create({ data: { actorId: actor.sub, action: 'CARE_RELATION_END', resourceType: 'CARE_RELATION', resourceId: relation.id } });
       const updated = await tx.careRelation.findUnique({ where: { id: relation.id } });
-      if (!updated) throw new NotFoundException('照护关系不存在');
+      if (!updated) throw new NotFoundException('服务关系不存在');
       return updated;
     });
   }
@@ -1101,8 +956,8 @@ export class ClinicalController {
   async weightTrend(@Req() req: Request, @Param('id') id: string) { return this.service.weightTrend(await this.service.actor(req), id); }
 
   @Get(['patients/:id/records', 'patients/:id/health-records'])
-  async records(@Req() req: Request, @Param('id') id: string, @Query('type') type?: string, @Query('recordType') recordType?: string) {
-    return this.service.patientRecords(await this.service.actor(req), id, recordType ?? type);
+  async records(@Req() req: Request, @Param('id') id: string, @Query('type') type?: string, @Query('recordType') recordType?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+    return this.service.patientRecords(await this.service.actor(req), id, recordType ?? type, page, pageSize);
   }
 
   @Get('patients/:id/stats')

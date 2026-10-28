@@ -1,8 +1,8 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import type { Request } from 'express';
 import { CareService, type ClinicalService } from './clinical';
 import { CommunicationsService } from './communications';
-import { FollowUpsService, followUpId } from './followups';
+import { FollowUpsService, followUpId, followUpView } from './followups';
 import type { PrismaService } from './prisma.service';
 import { TasksService } from './tasks';
 
@@ -10,6 +10,15 @@ const request = {} as Request;
 const patientActor = { sub: 'patient-1', role: 'PATIENT', typ: 'access', jti: 'jti-1' } as const;
 
 describe('workflow persistence guards', () => {
+  it.each(['EXERCISE_REPORT_READY', 'EXERCISE_REPORT_SHARED', 'exercise_report_shared'])('rejects forged %s notifications through the generic API', async (relatedType) => {
+    const notification = { create: jest.fn() };
+    const prisma = { notification } as unknown as PrismaService;
+    const clinical = { actor: jest.fn().mockResolvedValue(patientActor) } as unknown as ClinicalService;
+    const service = new CommunicationsService(prisma, clinical);
+    await expect(service.createNotification(request, { title: '伪造报告', content: '任意内容', type: 'GENERAL', priority: 'NORMAL', relatedType })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(notification.create).not.toHaveBeenCalled();
+  });
+
   it('uses a stable primary key to reject retried duplicate follow-up creation', () => {
     const scheduledAt = new Date('2026-08-18T02:00:00.000Z');
     expect(followUpId('doctor-1', 'patient-1', 'WEIGHT', scheduledAt)).toBe(
@@ -18,6 +27,17 @@ describe('workflow persistence guards', () => {
     expect(followUpId('doctor-1', 'patient-2', 'WEIGHT', scheduledAt)).not.toBe(
       followUpId('doctor-1', 'patient-1', 'WEIGHT', scheduledAt),
     );
+  });
+
+  it('adds an explicit Shanghai compatibility time without changing the canonical instant', () => {
+    const scheduledAt = new Date('2026-08-19T16:44:00.000Z');
+    const completedAt = new Date('2026-08-19T17:10:00.000Z');
+    const view = followUpView({ scheduledAt, completedAt });
+
+    expect(view.scheduledAt).toBe(scheduledAt);
+    expect(view.scheduledTime).toBe('2026-08-20T00:44:00.000+08:00');
+    expect(view.completedAt).toBe('2026-08-20T01:10:00.000+08:00');
+    expect(new Date(view.scheduledTime!).toISOString()).toBe(scheduledAt.toISOString());
   });
 
   it('does not emit completion side effects when a concurrent follow-up transition wins', async () => {
@@ -144,6 +164,7 @@ describe('workflow persistence guards', () => {
 
   it('does not consume an invite when another bind request already claimed the relation', async () => {
     const tx = {
+      careEnrollment: { findUnique: jest.fn().mockResolvedValue(null) },
       careInvite: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'invite-1',
@@ -201,5 +222,29 @@ describe('workflow persistence guards', () => {
 
     const preview = tx.notification.create.mock.calls[0][0].data.content as string;
     expect(Array.from(preview)).toHaveLength(500);
+  });
+
+  it('returns one continuous peer conversation even when clients send different context metadata', async () => {
+    const prisma = {
+      careRelation: { findFirst: jest.fn().mockResolvedValue({ id: 'relation-1', status: 'ACTIVE' }) },
+      message: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    } as unknown as PrismaService;
+    const clinical = {
+      actor: jest.fn().mockResolvedValue({ ...patientActor, role: 'PATIENT' }),
+    } as unknown as ClinicalService;
+    const service = new CommunicationsService(prisma, clinical);
+
+    await service.messages(request, {
+      peerId: 'doctor-1', relatedId: 'follow-1', relatedType: 'follow', page: 1, pageSize: 30,
+    } as never);
+
+    expect((prisma as never as { message: { findMany: jest.Mock } }).message.findMany.mock.calls[0][0].where)
+      .toEqual({ OR: [
+        { senderId: 'patient-1', receiverId: 'doctor-1', deletedBySenderAt: null },
+        { senderId: 'doctor-1', receiverId: 'patient-1', deletedByReceiverAt: null },
+      ] });
   });
 });

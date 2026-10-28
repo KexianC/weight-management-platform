@@ -1,10 +1,14 @@
 import { ConflictException } from '@nestjs/common';
 
-export type BusinessRole = 'PATIENT' | 'DOCTOR' | 'NUTRITIONIST' | 'ADMIN';
+export type BusinessRole = 'PATIENT' | 'DOCTOR' | 'NUTRITIONIST' | 'HEALTH_MANAGER' | 'EXERCISE_COACH' | 'ADMIN';
 export type FollowState = 'SCHEDULED' | 'IN_PROGRESS' | 'OVERDUE' | 'COMPLETED' | 'CANCELLED';
 export type TaskState = 'PENDING' | 'IN_PROGRESS' | 'OVERDUE' | 'COMPLETED' | 'CANCELLED';
 
 const practitionerRoles = new Set<BusinessRole>(['DOCTOR', 'NUTRITIONIST']);
+
+export function practitionerPhoneKey(role: BusinessRole, phone: string) {
+  return ['DOCTOR', 'NUTRITIONIST', 'HEALTH_MANAGER', 'EXERCISE_COACH'].includes(role) ? phone : null;
+}
 
 export function assertFollowUpTransition(current: FollowState, next: FollowState, role: BusinessRole) {
   if (current === next) return;
@@ -52,7 +56,13 @@ export function assertTaskTransition(current: TaskState, next: TaskState, role: 
 
 export function getRangeStart(range: string | undefined, now = new Date()) {
   const days = range === '90d' ? 90 : range === '30d' ? 30 : 7;
-  return new Date(now.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
+  const shanghaiNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const startUtc = Date.UTC(
+    shanghaiNow.getUTCFullYear(),
+    shanghaiNow.getUTCMonth(),
+    shanghaiNow.getUTCDate() - (days - 1),
+  ) - 8 * 60 * 60 * 1000;
+  return new Date(startUtc);
 }
 
 const commonCaloriesPer100g: Record<string, number> = {
