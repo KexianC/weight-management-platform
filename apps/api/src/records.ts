@@ -14,6 +14,7 @@ import { ClinicalService } from './clinical';
 import { estimateCalories, getRangeStart } from './domain';
 import { businessProjection } from './business-projection';
 import { PrismaService } from './prisma.service';
+import { DailyRoutineService, ROUTINE_SOURCE, ROUTINE_TYPES, routineDate, routineSlot } from './daily-routine';
 
 const recordTypes = ['WEIGHT', 'DIET', 'EXERCISE', 'MEDICATION', 'QUESTIONNAIRE', 'GENERAL', 'BLOOD_PRESSURE', 'SYMPTOM', 'SLEEP'] as const;
 const mealTypes = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'] as const;
@@ -86,7 +87,7 @@ const shanghaiDate = (value: Date) => new Date(value.getTime() + 8 * 3_600_000).
 
 @Injectable()
 export class RecordsService {
-  constructor(private readonly prisma: PrismaService, private readonly clinical: ClinicalService) {}
+  constructor(private readonly prisma: PrismaService, private readonly clinical: ClinicalService, private readonly routine?: DailyRoutineService) {}
 
   private recordView(record: any) {
     return {
@@ -184,7 +185,7 @@ export class RecordsService {
     return actor;
   }
 
-  private async attachImages(tx: Prisma.TransactionClient, ownerId: string, recordId: string, recordType: string, imageIds: string[] | undefined) {
+  private async attachImages(tx: Prisma.TransactionClient, ownerId: string, recordId: string, recordType: string, imageIds: string[] | undefined, measuredAt?: Date, mealType?: string) {
     const ids = [...new Set(imageIds ?? [])];
     if (!ids.length) return;
     const scopes = recordType === 'DIET' ? ['DIET_IMAGE', 'PRIVATE', 'GENERAL', 'FOLLOW_UP'] : ['HEALTH_RECORD_IMAGE', 'PRIVATE', 'GENERAL', 'FOLLOW_UP'];
@@ -193,16 +194,17 @@ export class RecordsService {
       posturePhoto: null, exerciseVideo: null,
       AND: [
         { OR: [{ healthRecordId: null }, { healthRecordId: recordId }] },
-        { OR: [{ referenceType: null }, { referenceType: 'HEALTH_RECORD', referenceId: recordId }] },
+        { OR: [{ referenceType: null }, { referenceType: 'HEALTH_RECORD', referenceId: recordId }, ...(this.routine && recordType === 'DIET' && measuredAt && mealType ? [{ referenceType: 'DAILY_CHECK_IN_MEAL_PHOTO', OR: [{ healthRecordId: recordId }, { healthRecordId: null, referenceId: `${routineDate(measuredAt)}:${mealType.toLowerCase()}` }] }] : [])] },
       ],
     };
     const assets = await tx.mediaAsset.findMany({ where, select: { id: true } });
     if (assets.length !== ids.length) throw new BadRequestException('附件不存在、不属于本人或用途不允许；体态照和同意书不能作为饮食照片');
     const changed = await tx.mediaAsset.updateMany({
-      where,
+      where: { ...where, OR: [{ referenceType: null }, { referenceType: { not: 'DAILY_CHECK_IN_MEAL_PHOTO' } }] },
       data: { healthRecordId: recordId, referenceType: 'HEALTH_RECORD', referenceId: recordId, scope: recordType === 'DIET' ? 'DIET_IMAGE' : 'HEALTH_RECORD_IMAGE' },
     });
-    if (changed.count !== ids.length) throw new ConflictException('附件状态已变化，请刷新后重试');
+    const daily = this.routine && recordType === 'DIET' && measuredAt && mealType ? await tx.mediaAsset.updateMany({ where: { ...where, referenceType: 'DAILY_CHECK_IN_MEAL_PHOTO' }, data: mealType === 'SNACK' ? { healthRecordId: recordId, referenceType: 'HEALTH_RECORD', referenceId: recordId, scope: 'DIET_IMAGE' } : { healthRecordId: recordId, referenceId: `${routineDate(measuredAt)}:${mealType.toLowerCase()}`, scope: 'PRIVATE' } }) : { count: 0 };
+    if (changed.count + daily.count !== ids.length) throw new ConflictException('附件状态已变化，请刷新后重试');
   }
 
   private data(dto: HealthRecordDto, measuredAt: Date) {
@@ -225,7 +227,7 @@ export class RecordsService {
     } : undefined;
     const page = Number(query.page ?? 1);
     const pageSize = Number(query.pageSize ?? 30);
-    const where = { patientId: actor.sub, ...(query.recordType ? { recordType: query.recordType } : {}), ...(measuredAt ? { measuredAt } : {}) };
+    const where = { patientId: actor.sub, source: { not: ROUTINE_SOURCE }, ...(query.recordType ? { recordType: query.recordType } : {}), ...(measuredAt ? { measuredAt } : {}) };
     const [items, total] = await Promise.all([
       this.prisma.healthRecord.findMany({ where, include: { reviews: { include: reviewInclude, orderBy: { createdAt: 'asc' } } }, orderBy: { measuredAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
       this.prisma.healthRecord.count({ where }),
@@ -235,7 +237,7 @@ export class RecordsService {
 
   async create(req: Request, input: HealthRecordDto) {
     const actor = await this.patientActor(req);
-    if (input.source === 'DAILY_CHECK_IN') throw new BadRequestException('每日填报记录请通过专属链接提交');
+    if (input.source === 'DAILY_CHECK_IN' || input.source === ROUTINE_SOURCE) throw new BadRequestException('每日填报记录请通过专属入口提交');
     const { dto, measuredAt } = this.normalizeRecord(input);
     const stable=(value:any):any=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).filter(([key,v])=>key!=='idempotencyKey'&&v!==undefined).sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>[key,stable(v)])):value;
     const fingerprint=createHash('sha256').update(JSON.stringify(stable(input))).digest('hex');
@@ -245,8 +247,10 @@ export class RecordsService {
       try{
         const record=await this.prisma.$transaction(async tx=>{
           if(requestKey){const previous=await tx.healthRecord.findUnique({where:{requestKey}});if(previous)return previous;}
+          if (this.routine) { await this.routine.lock(tx, actor.sub); if (ROUTINE_TYPES.includes(dto.recordType as any)) await this.routine.ensure(tx, actor.sub, routineDate(measuredAt)); }
           const created=await tx.healthRecord.create({data:{patientId:actor.sub,...this.data(dto,measuredAt),...(requestKey?{requestKey,requestFingerprint:fingerprint}:{})}});
-          await this.attachImages(tx,actor.sub,created.id,dto.recordType,dto.imageUrls);
+          await this.attachImages(tx,actor.sub,created.id,dto.recordType,dto.imageUrls,measuredAt,dto.mealType);
+          if (this.routine && ROUTINE_TYPES.includes(dto.recordType as any)) await this.routine.changed(tx, actor.sub, routineDate(measuredAt), [routineSlot(created)]);
           await tx.auditLog.create({data:{actorId:actor.sub,action:'HEALTH_RECORD_CREATE',resourceType:'HEALTH_RECORD',resourceId:created.id,metadata:{recordType:dto.recordType}}});
           return created;
         },{isolationLevel:'Serializable'});
@@ -263,17 +267,17 @@ export class RecordsService {
 
   async detail(req: Request, id: string) {
     const actor = await this.patientActor(req);
-    const record = await this.prisma.healthRecord.findFirst({ where: { id, patientId: actor.sub }, include: { reviews: { include: reviewInclude, orderBy: { createdAt: 'asc' } } } });
+    const record = await this.prisma.healthRecord.findFirst({ where: { id, patientId: actor.sub, source: { not: ROUTINE_SOURCE } }, include: { reviews: { include: reviewInclude, orderBy: { createdAt: 'asc' } } } });
     if (!record) throw new NotFoundException('健康记录不存在');
     return this.recordView(record);
   }
 
   async update(req: Request, id: string, patch: HealthRecordPatchDto) {
     const actor = await this.patientActor(req);
-    if (patch.source === 'DAILY_CHECK_IN') throw new BadRequestException('不能将普通健康记录改为每日填报记录');
-    const existing = await this.prisma.healthRecord.findFirst({ where: { id, patientId: actor.sub } });
+    if (patch.source === 'DAILY_CHECK_IN' || patch.source === ROUTINE_SOURCE) throw new BadRequestException('不能将普通健康记录改为每日填报记录');
+    const existing = await this.prisma.healthRecord.findFirst({ where: { id, patientId: actor.sub, source: { not: ROUTINE_SOURCE } } });
     if (!existing) throw new NotFoundException('健康记录不存在');
-    if (existing.source === 'DAILY_CHECK_IN') throw new BadRequestException('请通过专属每日填报链接修改这条记录');
+    if (existing.source === 'DAILY_CHECK_IN' && !this.routine) throw new BadRequestException('请通过专属每日填报链接修改这条记录');
     if (patch.recordType && patch.recordType !== existing.recordType) throw new BadRequestException('不能更改已有记录的类型，请新建记录');
     const edits = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as Partial<HealthRecordDto>;
     const merged: HealthRecordDto = {
@@ -295,19 +299,30 @@ export class RecordsService {
       merged.caloriesSource = undefined;
     }
     const { dto, measuredAt } = this.normalizeRecord(merged, patch.imageUrls !== undefined || patch.imageAssetIds !== undefined);
+    if (this.routine && existing.recordType === 'SLEEP' && patch.sleepHours !== undefined && patch.payload === undefined) {
+      const payload = { ...(dto.payload ?? {}) }; delete payload.sleep_start; delete payload.sleep_end; dto.payload = payload;
+    }
     const updated = await this.prisma.$transaction(async (tx) => {
+      const days = [...new Set([routineDate(existing.measuredAt), routineDate(measuredAt)])].sort();
+      if (this.routine) { await this.routine.lock(tx, actor.sub); if (ROUTINE_TYPES.includes(existing.recordType as any)) for (const date of days) await this.routine.ensure(tx, actor.sub, date); }
+      if (this.routine && existing.recordType === 'WEIGHT' && days.length > 1) await this.routine.beforeDelete(tx, existing);
       const changed = await tx.healthRecord.updateMany({
         where: { id, patientId: actor.sub, updatedAt: patch.expectedUpdatedAt ? new Date(patch.expectedUpdatedAt) : existing.updatedAt },
         data: this.data(dto, measuredAt),
       });
       if (changed.count !== 1) throw new ConflictException('记录已被其他会话修改，请刷新后重试');
       if (patch.imageUrls !== undefined || patch.imageAssetIds !== undefined) {
-        await tx.mediaAsset.updateMany({ where: { healthRecordId: id, ownerId: actor.sub, ...(dto.imageUrls?.length ? { id: { notIn: dto.imageUrls } } : {}) }, data: { healthRecordId: null, referenceType: null, referenceId: null } });
-        await this.attachImages(tx, actor.sub, id, dto.recordType, dto.imageUrls);
+        const detached = { healthRecordId: id, ownerId: actor.sub, ...(dto.imageUrls?.length ? { id: { notIn: dto.imageUrls } } : {}) };
+        if (this.routine) await tx.mediaAsset.updateMany({ where: { ...detached, referenceType: 'DAILY_CHECK_IN_MEAL_PHOTO' }, data: { healthRecordId: null, status: 'DELETED', deletedAt: new Date() } });
+        await tx.mediaAsset.updateMany({ where: { ...detached, OR: [{ referenceType: null }, { referenceType: { not: 'DAILY_CHECK_IN_MEAL_PHOTO' } }] }, data: { healthRecordId: null, referenceType: null, referenceId: null } });
+        await this.attachImages(tx, actor.sub, id, dto.recordType, dto.imageUrls, measuredAt, dto.mealType);
+      } else if (this.routine && dto.recordType === 'DIET') {
+        await tx.mediaAsset.updateMany({ where: { healthRecordId: id, ownerId: actor.sub, referenceType: 'DAILY_CHECK_IN_MEAL_PHOTO', status: 'READY' }, data: dto.mealType === 'SNACK' ? { referenceType: 'HEALTH_RECORD', referenceId: id, scope: 'DIET_IMAGE' } : { referenceId: `${routineDate(measuredAt)}:${String(dto.mealType).toLowerCase()}` } });
       }
       await tx.auditLog.create({ data: { actorId: actor.sub, action: 'HEALTH_RECORD_UPDATE', resourceType: 'HEALTH_RECORD', resourceId: id } });
       const row = await tx.healthRecord.findUnique({ where: { id }, include: { reviews: { include: reviewInclude, orderBy: { createdAt: 'asc' } } } });
       if (!row) throw new NotFoundException('健康记录不存在');
+      if (this.routine && ROUTINE_TYPES.includes(existing.recordType as any)) for (const date of days) await this.routine.changed(tx, actor.sub, date, [routineSlot(existing), routineSlot(row)]);
       return row;
     });
     return this.recordView(updated);
@@ -315,12 +330,15 @@ export class RecordsService {
 
   async remove(req: Request, id: string) {
     const actor = await this.patientActor(req);
-    const record = await this.prisma.healthRecord.findFirst({ where: { id, patientId: actor.sub } });
+    const record = await this.prisma.healthRecord.findFirst({ where: { id, patientId: actor.sub, source: { not: ROUTINE_SOURCE } } });
     if (!record) throw new NotFoundException('健康记录不存在');
-    if (record.source === 'DAILY_CHECK_IN') throw new BadRequestException('每日填报记录需要保留，请通过专属链接修改当天信息');
+    if (record.source === 'DAILY_CHECK_IN' && !this.routine) throw new BadRequestException('每日填报记录需要保留，请通过专属链接修改当天信息');
     await this.prisma.$transaction(async (tx) => {
+      if (this.routine) { await this.routine.lock(tx, actor.sub); if (ROUTINE_TYPES.includes(record.recordType as any)) await this.routine.beforeDelete(tx, record); }
+      if (this.routine) await tx.mediaAsset.updateMany({ where: { healthRecordId: id, ownerId: actor.sub, referenceType: 'DAILY_CHECK_IN_MEAL_PHOTO' }, data: { status: 'DELETED', deletedAt: new Date() } });
       await tx.auditLog.create({ data: { actorId: actor.sub, action: 'HEALTH_RECORD_DELETE', resourceType: 'HEALTH_RECORD', resourceId: id, metadata: { recordType: record.recordType, measuredAt: record.measuredAt } } });
       await tx.healthRecord.delete({ where: { id } });
+      if (this.routine && ROUTINE_TYPES.includes(record.recordType as any)) await this.routine.changed(tx, actor.sub, routineDate(record.measuredAt), [routineSlot(record)]);
     });
     return { deleted: true, id };
   }
@@ -329,7 +347,7 @@ export class RecordsService {
     const actor = await this.patientActor(req);
     const start = getRangeStart(range);
     const [records, user, latestWeight] = await Promise.all([
-      this.prisma.healthRecord.findMany({ where: { patientId: actor.sub, measuredAt: { gte: start } }, orderBy: { measuredAt: 'asc' } }),
+      this.prisma.healthRecord.findMany({ where: { patientId: actor.sub, source: { not: ROUTINE_SOURCE }, measuredAt: { gte: start } }, orderBy: { measuredAt: 'asc' } }),
       this.prisma.user.findUnique({ where: { id: actor.sub }, include: { patientProfile: true } }),
       this.prisma.healthRecord.findFirst({ where: { patientId: actor.sub, recordType: 'WEIGHT', weightKg: { not: null } }, orderBy: { measuredAt: 'desc' } }),
     ]);
@@ -345,7 +363,7 @@ export class RecordsService {
     const totalCalories = diets.reduce((sum, item) => sum + Number(item.caloriesKcal ?? 0), 0);
     const rangeDays = range === '90d' ? 90 : range === '30d' ? 30 : 7;
     const date = shanghaiDate(new Date());
-    const todayDiets = diets.filter((item) => shanghaiDate(item.measuredAt) === date);
+    const todayDiets = diets.filter((item) => shanghaiDate(item.measuredAt) === date && (item.note || (Array.isArray(item.mealItems) && item.mealItems.length) || (Array.isArray(item.imageUrls) && item.imageUrls.length)));
     const mealCounts = Object.fromEntries(mealTypes.map((type) => [type, todayDiets.filter((item) => item.mealType === type).length]));
     return {
       range, startAt: start, generatedAt: new Date(), targetWeightKg, currentWeightKg, bmi,
@@ -360,7 +378,7 @@ export class RecordsService {
         trend: diets.map((item) => ({ date: item.measuredAt, caloriesKcal: decimal(item.caloriesKcal), mealType: item.mealType })),
       },
       diet: { records: diets.map((item) => this.recordView(item)), meals: mealGroups, today: { date, timezone: 'Asia/Shanghai', mealCount: todayDiets.length, mealCounts } },
-      sleep: { records: sleep.map((item) => this.recordView(item)), recordedToday: sleep.some((item) => shanghaiDate(item.measuredAt) === date), reminder: '记录昨晚睡眠时长（小时）' },
+      sleep: { records: sleep.map((item) => this.recordView(item)), recordedToday: sleep.some((item) => item.sleepHours !== null && shanghaiDate(item.measuredAt) === date), reminder: '记录昨晚睡眠时长（小时）' },
     };
   }
 

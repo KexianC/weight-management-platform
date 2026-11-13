@@ -31,7 +31,7 @@ function harness(options = {}) {
     previewImage() {}, chooseImage: request => imageChoices.push(request)
   }
   const deps = {
-    ...model, store, uni,
+    ...model, store, uni, DailyRoutineFields: {},
     createHealthRecord: async payload => {
       calls.push({ kind: 'create', payload: structuredClone(payload) })
       if (failures[payload.mealType] > 0) { failures[payload.mealType]--; throw new Error('虚构可重试失败') }

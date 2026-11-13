@@ -237,21 +237,21 @@ export class MediaService {
     };
   }
 
-  private async authorize(actor: Actor, id: string) {
-    const asset = await this.prisma.mediaAsset.findUnique({ where: { id } });
+  private async authorize(actor: Actor, id: string, database: Prisma.TransactionClient | PrismaService = this.prisma) {
+    const asset = await database.mediaAsset.findUnique({ where: { id } });
     if (!asset || asset.status !== 'READY') throw new NotFoundException('文件不存在');
     if (asset.referenceType === DAILY_PHOTO_TYPE) {
-      if (!await canReadDailyCheckInPhoto(this.prisma, actor, asset)) throw new ForbiddenException('无权访问该餐食照片');
-      await this.prisma.auditLog.create({ data: { actorId: actor.sub, action: 'DAILY_CHECK_IN_PHOTO_READ', resourceType: 'MEDIA_ASSET', resourceId: id } });
+      if (!await canReadDailyCheckInPhoto(database, actor, asset)) throw new ForbiddenException('无权访问该餐食照片');
+      await database.auditLog.create({ data: { actorId: actor.sub, action: 'DAILY_CHECK_IN_PHOTO_READ', resourceType: 'MEDIA_ASSET', resourceId: id } });
       return asset;
     }
     if (asset.referenceType === 'YUANQIZHAN_PHOTO') {
-      if (await canReadYuanqizhanMedia(this.prisma, actor, asset)) return asset;
+      if (await canReadYuanqizhanMedia(database, actor, asset)) return asset;
       throw new ForbiddenException('无权访问该活动照片');
     }
     // Sensitive business media may never use upload ownership as an authorization shortcut.
     if (businessMediaTypes.has(asset.referenceType ?? '')) {
-      if (this.careManagement && await this.careManagement.canAccessMedia(actor, id)) { if(actor.role==='HEALTH_MANAGER') await this.prisma.auditLog.create({data:{actorId:actor.sub,action:'HM_GLOBAL_MEDIA_READ',resourceType:'MEDIA_ASSET',resourceId:id}}); return asset; }
+      if (this.careManagement && await this.careManagement.canAccessMedia(actor, id)) { if(actor.role==='HEALTH_MANAGER') await database.auditLog.create({data:{actorId:actor.sub,action:'HM_GLOBAL_MEDIA_READ',resourceType:'MEDIA_ASSET',resourceId:id}}); return asset; }
       throw new ForbiddenException('无权访问该文件');
     }
     if (asset.referenceType === 'HEALTH_RECORD' || asset.healthRecordId) {
@@ -259,17 +259,18 @@ export class MediaService {
       if (!recordId || (asset.referenceId && asset.healthRecordId && asset.referenceId !== asset.healthRecordId)) {
         throw new ForbiddenException('媒体关联无效');
       }
-      const record = await this.prisma.healthRecord.findUnique({
-        where: { id: recordId }, select: { patientId: true, recordType: true },
+      const record = await database.healthRecord.findUnique({
+        where: { id: recordId }, select: { patientId: true, recordType: true, imageUrls: true },
       });
       if (!record) throw new ForbiddenException('媒体关联无效');
-      if (actor.role === 'HEALTH_MANAGER') { await this.clinical.assertCare(actor, record.patientId); await this.prisma.auditLog.create({data:{actorId:actor.sub,action:'HM_GLOBAL_MEDIA_READ',resourceType:'MEDIA_ASSET',resourceId:id}}); return asset; }
+      if (record.recordType === 'DIET' && (!Array.isArray(record.imageUrls) || !record.imageUrls.includes(asset.id))) throw new ForbiddenException('餐食照片已移除或关联失效');
+      if (actor.role === 'HEALTH_MANAGER') { await this.clinical.assertCare(actor, record.patientId); await database.auditLog.create({data:{actorId:actor.sub,action:'HM_GLOBAL_MEDIA_READ',resourceType:'MEDIA_ASSET',resourceId:id}}); return asset; }
       if (actor.role === 'PATIENT' && record.patientId === actor.sub) return asset;
       if (actor.role === 'NUTRITIONIST' && record.recordType !== 'DIET') {
         throw new ForbiddenException('营养师不可访问客户原始照片或附件');
       }
       if (actor.role === 'NUTRITIONIST') {
-        const enrollment = await this.prisma.careEnrollment.findUnique({
+        const enrollment = await database.careEnrollment.findUnique({
           where: { patientId: record.patientId },
           select: { nutritionistId: true, patient: { select: { status: true } } },
         });
@@ -278,7 +279,7 @@ export class MediaService {
         }
       }
       if (['DOCTOR', 'NUTRITIONIST'].includes(actor.role)) {
-        const relation = await this.prisma.careRelation.findFirst({
+        const relation = await database.careRelation.findFirst({
           where: { patientId: record.patientId, practitionerId: actor.sub, status: 'ACTIVE' }, select: { id: true },
         });
         if (relation) return asset;
@@ -289,11 +290,11 @@ export class MediaService {
       throw new ForbiddenException('营养师不可访问客户原始照片或附件');
     }
     if (asset.referenceType === 'FOLLOW_UP' && asset.referenceId) {
-      const follow = await this.prisma.followUp.findUnique({ where: { id: asset.referenceId } });
-      if (follow && actor.role === 'HEALTH_MANAGER') { await this.clinical.assertCare(actor, follow.patientId); await this.prisma.auditLog.create({data:{actorId:actor.sub,action:'HM_GLOBAL_MEDIA_READ',resourceType:'MEDIA_ASSET',resourceId:id}}); return asset; }
+      const follow = await database.followUp.findUnique({ where: { id: asset.referenceId } });
+      if (follow && actor.role === 'HEALTH_MANAGER') { await this.clinical.assertCare(actor, follow.patientId); await database.auditLog.create({data:{actorId:actor.sub,action:'HM_GLOBAL_MEDIA_READ',resourceType:'MEDIA_ASSET',resourceId:id}}); return asset; }
       if (follow && actor.role === 'PATIENT' && follow.patientId === actor.sub) return asset;
       if (follow && actor.role === 'DOCTOR' && follow.practitionerId === actor.sub) {
-        const relation = await this.prisma.careRelation.findFirst({
+        const relation = await database.careRelation.findFirst({
           where: { patientId: follow.patientId, practitionerId: actor.sub, status: 'ACTIVE' }, select: { id: true },
         });
         if (relation) return asset;
@@ -337,9 +338,9 @@ export class MediaService {
     return { id, mimeType: asset.mimeType, url: this.privateUrl(id, actor), expiresIn: URL_TTL_SECONDS, requiresAuthorization: true };
   }
 
-  async dailyCheckInPhotoView(actor: Actor, id: string) {
-    const asset = await this.authorize(actor, id);
-    if (asset.referenceType !== DAILY_PHOTO_TYPE) throw new ForbiddenException('餐食照片关联无效');
+  async dailyCheckInPhotoView(actor: Actor, id: string, database?: Prisma.TransactionClient) {
+    const asset = await this.authorize(actor, id, database);
+    if (![DAILY_PHOTO_TYPE, 'HEALTH_RECORD'].includes(asset.referenceType ?? '')) throw new ForbiddenException('餐食照片关联无效');
     return { id, mimeType: asset.mimeType, url: this.privateUrl(id, actor) };
   }
 
@@ -376,7 +377,7 @@ export class MediaService {
 
   /** Internal only: the capability service checks the current link before every read. */
   async dailyCheckInPhotoContent(asset: MediaAsset): Promise<MediaContent> {
-    if (asset.referenceType !== DAILY_PHOTO_TYPE || asset.status !== 'READY' || asset.deletedAt) throw new NotFoundException('餐食照片不存在');
+    if (![DAILY_PHOTO_TYPE, 'HEALTH_RECORD'].includes(asset.referenceType ?? '') || asset.status !== 'READY' || asset.deletedAt) throw new NotFoundException('餐食照片不存在');
     if (asset.provider === 'LOCAL') return { fullPath: this.localPath(asset.objectKey), mimeType: asset.mimeType };
     if (asset.provider !== 'ALIYUN_OSS') throw new ServiceUnavailableException('未知媒体存储类型');
     const oss = this.ossClient();

@@ -15,6 +15,7 @@ export type DailyCheckInAnswers = {
   water_ml?: number;
   sleep_start?: string;
   sleep_end?: string;
+  sleep_hours?: number;
   breakfast_text?: string;
   lunch_text?: string;
   dinner_text?: string;
@@ -23,8 +24,8 @@ export type DailyCheckInAnswers = {
   dinner_photo_ids?: string[];
 };
 export type DailyCheckInPhoto = { id: string; mimeType: string; url: string };
-export type DailyCheckInRecord = { date: string; version: number; weightKg: number; answers: DailyCheckInAnswers; updatedAt: string; photos?: DailyCheckInPhoto[]; redactedAnswerKeys?: (keyof DailyCheckInAnswers)[] };
-export type DailyCheckInContext = { date: string; clientLabel: string; record: DailyCheckInRecord | null };
+export type DailyCheckInRecord = { date: string; version: number; weightKg: number | null; answers: DailyCheckInAnswers; updatedAt: string; revision?: string; photos?: DailyCheckInPhoto[]; redactedAnswerKeys?: (keyof DailyCheckInAnswers)[] };
+export type DailyCheckInContext = { date: string; clientLabel: string; revision?: string; record: DailyCheckInRecord | null; draft?: DailyCheckInRecord | null };
 export type DailyCheckInLink = { url: string; qrDataUrl: string; revoked: boolean };
 export type DailyCheckInRecordPage = { items: DailyCheckInRecord[]; total: number; page: number; pageSize: number; hasMore: boolean; canViewLink?: boolean; canManageLink?: boolean };
 export type DailyCheckInQuestion = { key: keyof DailyCheckInAnswers; label: string; options?: ReadonlyArray<{ value: number | string; label: string }> };
@@ -44,9 +45,9 @@ export function dailySleepMinutes(start?: string, end?: string): number | null {
   const minute = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
   return (minute(end) - minute(start) + 24 * 60) % (24 * 60);
 }
-export function dailySleepLabel(start?: string, end?: string): string {
+export function dailySleepLabel(start?: string, end?: string, hours?: number): string {
   const minutes = dailySleepMinutes(start, end);
-  if (minutes === null) return '未填写';
+  if (minutes === null) return typeof hours === 'number' && Number.isFinite(hours) ? `${hours}小时` : '未填写';
   return `${Math.floor(minutes / 60)}小时${minutes % 60 ? `${minutes % 60}分钟` : ''}`;
 }
 export function validateDailyPhoto(file: Pick<File, 'type' | 'size'>): void {

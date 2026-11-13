@@ -21,7 +21,8 @@ import { DietPlanTemplateAdminController, NutritionController, NutritionService 
 import { CareManagementController, CareManagementService } from './care-management';
 import { ReportWorkflowController, ReportWorkflowService } from './report-workflow';
 import { NutritionPrivacyInterceptor } from './privacy';
-import { DailyCheckInPublicController, DailyCheckInStaffController, DailyCheckInService, DailyCheckInPhotoUploadGuard } from './daily-check-in';
+import { DailyCheckInPublicController, DailyCheckInStaffController, DailyCheckInService, DailyCheckInPhotoUploadGuard, PatientDailyCheckInController, PatientDailyPhotoUploadGuard } from './daily-check-in';
+import { DailyRoutineService } from './daily-routine';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: process.env.RECONSTRUCTION_LOCAL_ONLY === 'true' }), JwtModule.register({})],
@@ -44,6 +45,7 @@ import { DailyCheckInPublicController, DailyCheckInStaffController, DailyCheckIn
     ReportWorkflowController,
     DailyCheckInPublicController,
     DailyCheckInStaffController,
+    PatientDailyCheckInController,
   ],
   providers: [YuanqizhanService, YuanqizhanRemindersService, BodyCloudOcrService,
     PrismaService,
@@ -64,6 +66,8 @@ import { DailyCheckInPublicController, DailyCheckInStaffController, DailyCheckIn
     ReportWorkflowService,
     DailyCheckInService,
     DailyCheckInPhotoUploadGuard,
+    PatientDailyPhotoUploadGuard,
+    DailyRoutineService,
     { provide: APP_INTERCEPTOR, useClass: NutritionPrivacyInterceptor },
   ],
 })

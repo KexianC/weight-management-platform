@@ -2,30 +2,31 @@
   <view class="record-page patient-theme" :class="{ 'diet-active': activeTab === 'diet' }">
     <view class="intro"><text class="title">记录每一天</text><text class="muted">MedTalent健康数字助手 · 以真实记录支持持续管理</text></view>
     <view class="tabs"><button :disabled="saving" v-for="tab in tabs" :key="tab.key" :class="{ active: activeTab === tab.key }" @tap="activeTab = tab.key">{{ tab.label }}</button></view>
+    <DailyRoutineFields ref="dailyRoutine" :tab="activeTab" :account-id="accountId" :active="recordVisible" @saved="loadHistory(true)" />
     <view v-if="activeTab === 'weight'" class="card">
-      <text class="heading">体重与围度</text>
+      <text class="heading">新增体重与围度记录</text>
       <view class="row"><input :disabled="saving" v-model="weight.value" type="digit" placeholder="请输入体重" /><picker :disabled="saving" :range="['kg', '斤']" :value="weight.unit === 'kg' ? 0 : 1" @change="changeWeightUnit"><view class="picker">{{ weight.unit }} ▾</view></picker></view>
       <view class="row"><text>腰围 cm（选填）</text><input :disabled="saving" v-model="weight.waistCm" type="digit" placeholder="例如 80" /></view>
       <view class="row"><text>臀围 cm（选填）</text><input :disabled="saving" v-model="weight.hipCm" type="digit" placeholder="例如 95" /></view>
       <text v-if="bmiValue" class="hint">BMI {{ bmiValue }}（按资料中的身高计算）</text>
-      <button class="primary" :disabled="saving" @tap="saveWeight">{{ saving ? '保存中…' : '保存体重与围度' }}</button>
+      <button class="primary" :disabled="saving" @tap="saveWeight">{{ saving ? '保存中…' : '新增体重与围度记录' }}</button>
     </view>
     <view v-if="activeTab === 'sleep'" class="card">
-      <text class="heading">昨晚睡眠</text><text class="muted">记录实际睡眠时长，单位小时</text>
+      <text class="heading">新增睡眠记录</text><text class="muted">记录实际睡眠时长，单位小时</text>
       <input :disabled="saving" v-model="sleepHours" type="digit" placeholder="例如 7.5 小时" />
-      <button class="primary" :disabled="saving" @tap="saveSleep">保存睡眠记录</button>
+      <button class="primary" :disabled="saving" @tap="saveSleep">新增睡眠记录</button>
     </view>
     <view v-if="activeTab === 'exercise'" class="card">
-      <text class="heading">运动打卡</text>
+      <text class="heading">新增运动记录</text>
       <input :disabled="saving" v-model="exercise.activity" maxlength="80" placeholder="运动名称，如散步、跟练" />
       <input :disabled="saving" v-model="exercise.durationMinutes" type="digit" placeholder="实际运动分钟数" />
       <textarea :disabled="saving" v-model="exercise.note" maxlength="500" placeholder="运动感受或备注（选填）" />
-      <button class="primary" :disabled="saving" @tap="saveExercise">保存运动打卡</button>
+      <button class="primary" :disabled="saving" @tap="saveExercise">新增运动记录</button>
     </view>
     <view v-if="activeTab === 'diet'">
       <view v-for="plan in plans" :key="plan.id" class="card plan"><text class="heading">{{ plan.title }}</text><text>{{ plan.summary }}</text><text class="hint">{{ plan.instructions }}</text></view>
       <form :key="editingId || diet.mealType" class="card diet-form" @submit="submitDietForm"><view class="meal-form-content">
-        <view class="row"><text class="heading">{{ editingId ? '修改这餐' : '填写每日饮食' }}</text><button :disabled="saving" v-if="editingId" size="mini" @tap="cancelEdit">取消修改</button></view>
+        <view class="row"><text class="heading">{{ editingId ? '修改这餐' : '新增餐食记录' }}</text><button :disabled="saving" v-if="editingId" size="mini" @tap="cancelEdit">取消修改</button></view>
         <text class="hint">{{ editingId ? '修改后点击保存，其他餐次的待提交内容会保留。' : '早餐、午餐、晚餐分别填写，切换餐次会保留内容，最后一键提交。只提交已填写的餐次。' }}</text>
         <view class="meal-tabs"><button :disabled="saving || !!editingId" v-for="meal in meals" :key="meal.key" :class="{ active: diet.mealType === meal.key, filled: !editingId && hasMealContent(mealDraftFor(meal.key)) }" @tap="switchMeal(meal.key)"><text>{{ meal.label }}</text><text v-if="!editingId && hasMealContent(mealDraftFor(meal.key))" class="meal-draft-label">待提交</text></button></view>
         <view class="row"><picker :disabled="saving" mode="date" :value="diet.date" :end="today" @change="diet.date = $event.detail.value"><view class="picker">{{ diet.date }} ▾</view></picker><picker :disabled="saving" mode="time" :value="diet.time" @change="diet.time = $event.detail.value"><view class="picker">{{ diet.time }} ▾</view></picker></view>
@@ -63,7 +64,7 @@
       </template>
       <template v-else-if="record.type === 'weight'"><text class="metric">{{ record.weight }} kg / {{ (Number(record.weight) * 2).toFixed(1) }} 斤</text><text class="muted">腰围 {{ record.waistCm == null ? '未填' : record.waistCm + 'cm' }} · 臀围 {{ record.hipCm == null ? '未填' : record.hipCm + 'cm' }}</text></template>
       <template v-else-if="record.type === 'sleep'"><text class="metric">{{ record.sleepHours }} 小时</text></template>
-      <template v-else><text>{{ record.payload?.activity || '运动打卡' }} · {{ record.payload?.durationMinutes || '—' }} 分钟</text><text>{{ record.note }}</text></template>
+      <template v-else><text>{{ record.payload?.activity || '运动打卡' }} · {{ record.payload?.durationMinutes ?? '—' }} 分钟</text><text>{{ record.note }}</text></template>
       <view v-for="review in record.reviews || []" :key="review.id" class="review"><text class="hint">{{ review.practitioner?.displayName || '服务团队' }} · {{ formatTime(review.createdAt) }}</text><text class="paragraph">{{ review.comment }}</text><view v-for="reply in review.replies || []" :key="reply.id" class="reply"><text class="muted">我的回复 · {{ formatTime(reply.createdAt) }}</text><text>{{ reply.comment }}</text></view><input :disabled="saving" v-model="replyDrafts[review.id]" maxlength="2000" placeholder="回复这条点评" /><button size="mini" :disabled="replying === review.id" @tap="replyReview(record.id, review.id)">添加回复</button></view>
       <button class="delete" size="mini" :disabled="saving" @tap="deleteRecord(record)">删除记录</button>
     </view>
@@ -73,12 +74,14 @@
 </template>
 <script>
 import store from '../../store/index.js'
+import DailyRoutineFields from '../../components/DailyRoutineFields.vue'
 import { createHealthRecord, updateHealthRecord, getHealthRecord, getHealthRecords, deleteHealthRecord, replyToRecordReview, calculateCaloriesWithAI, upload, getDietPlans } from '../../utils/api.js'
 import { resolveMediaFile, releaseMediaFile } from '../../utils/media-access.js'
 import { foodEstimateKey, completeMealEstimates, CALORIE_LABELS, prepareRecordSubmission, buildDietPayload, foodItem, mergeMealItems, mealCalories, localDate, optionalNumber, isPresent } from '../../utils/record-model.js'
 const emptyFood = () => ({ name: '', weightGrams: '', caloriesKcal: '' })
 const emptyDiet = () => ({ mealType: 'BREAKFAST', date: localDate(), time: new Date().toTimeString().slice(0, 5), note: '', mealItems: [], calories: '', estimated: false, expectedUpdatedAt: undefined })
 export default {
+  components: { DailyRoutineFields },
   data() { return { activeTab: 'weight', tabs: [{ key: 'weight', label: '体重围度' }, { key: 'diet', label: '饮食' }, { key: 'sleep', label: '睡眠' }, { key: 'exercise', label: '运动' }], meals: [{ key: 'BREAKFAST', label: '早餐' }, { key: 'LUNCH', label: '午餐' }, { key: 'DINNER', label: '晚餐' }, { key: 'SNACK', label: '加餐' }], today: localDate(), weight: { value: '', unit: 'kg', waistCm: '', hipCm: '' },
     height: null, // 仅使用用户资料中的真实身高；缺失时不推算 BMI
     sleepHours: '', exercise: { activity: '', durationMinutes: '', note: '' }, diet: emptyDiet(), draftFood: emptyFood(), photos: [], photoError: '', editingId: '', mealDrafts: {}, resumeMeal: 'BREAKFAST', dietSession: 0, dietSubmitMessage: '', dietSubmitError: '', submittingMeal: '', saving: false, estimating: false, history: [], historyError: '', loadingHistory: false, historyPage: 1, hasMore: false, replyDrafts: {}, replying: '', plans: [], accountId: '', loadSequence: 0, pendingCreates: {}, estimateCache: {}, estimateGeneration: 0, recordVisible: true }
@@ -168,7 +171,7 @@ export default {
       finally { if (sequence === this.loadSequence) this.loadingHistory = false }
     },
     changeWeightUnit(event) { const unit = Number(event.detail.value) === 1 ? '斤' : 'kg'; if (this.weight.value && unit !== this.weight.unit) this.weight.value = String(Number(this.weight.value) * (unit === '斤' ? 2 : 0.5)); this.weight.unit = unit },
-    async createRecord(payload) { const attempt = prepareRecordSubmission(payload, this.pendingCreates[payload.recordType]); this.pendingCreates[payload.recordType] = attempt; const result = await createHealthRecord(attempt.payload); if (result.code === 200) delete this.pendingCreates[payload.recordType]; return result },
+    async createRecord(payload) { const attempt = prepareRecordSubmission(payload, this.pendingCreates[payload.recordType]); this.pendingCreates[payload.recordType] = attempt; const result = await createHealthRecord(attempt.payload); if (result.code === 200) { delete this.pendingCreates[payload.recordType]; this.$refs?.dailyRoutine?.refreshAfterRecord() } return result },
     async saveSimple(payload, clear) { if (this.saving) return; this.saving = true; try { const r = await this.createRecord(payload); if (r.code !== 200) throw new Error(r.message); clear(); this.toast('已保存'); await this.loadHistory(true) } catch (e) { this.toast(e.message || '保存失败，输入已保留') } finally { this.saving = false } },
     saveWeight() { try { const weightValue = optionalNumber(this.weight.value, this.weight.unit === '斤' ? 800 : 400, '体重', this.weight.unit === '斤' ? 40 : 20); if (weightValue === undefined) throw new Error('请输入体重'); this.saveSimple({ recordType: 'WEIGHT', recordedAt: new Date().toISOString(), weightValue, weightUnit: this.weight.unit === '斤' ? 'JIN' : 'KG', waistCm: optionalNumber(this.weight.waistCm, 300, '腰围', 20), hipCm: optionalNumber(this.weight.hipCm, 300, '臀围', 20) }, () => { this.weight.value = ''; this.weight.waistCm = ''; this.weight.hipCm = '' }) } catch(e) { this.toast(e.message) } },
     saveSleep() { try { const sleepHours = optionalNumber(this.sleepHours, 24, '睡眠时长'); if (sleepHours === undefined) throw new Error('请输入睡眠时长'); this.saveSimple({ recordType: 'SLEEP', recordedAt: new Date().toISOString(), sleepHours }, () => { this.sleepHours = '' }) } catch(e) { this.toast(e.message) } },
@@ -291,7 +294,7 @@ export default {
           submitted.push(this.mealLabel(key))
           this.dietSubmitMessage = '已提交：' + submitted.join('、')
         }
-        this.toast('已提交 ' + submitted.length + ' 餐'); await this.loadHistory(true)
+        this.toast('已提交 ' + submitted.length + ' 餐'); await this.loadHistory(true); this.$refs?.dailyRoutine?.refreshAfterRecord()
       } catch (e) {
         if (!current()) return
         if (!this.saving && mealKey) this.switchMeal(mealKey)
@@ -309,7 +312,7 @@ export default {
         const payload = buildDietPayload({ ...this.diet, estimates: this.estimateCache, imageAssetIds: this.photos.map(p => p.assetId) }, this.draftFood)
         const r = this.editingId ? await updateHealthRecord(this.editingId, payload) : await this.createRecord(payload)
         if (r.code !== 200) throw new Error(r.message || '保存失败')
-        this.resetDiet(); this.toast('整餐已保存'); await this.loadHistory(true)
+        this.resetDiet(); this.toast('整餐已保存'); await this.loadHistory(true); this.$refs?.dailyRoutine?.refreshAfterRecord()
       } catch(e) { this.toast(e.statusCode === 409 ? '记录已被更新，请重新打开后修改；当前输入已保留' : e.message || '保存失败，输入已保留') } finally { this.saving = false }
     },
     async editDiet(record) {
@@ -322,7 +325,7 @@ export default {
       catch(e) { this.toast(e.message || '记录加载失败') } finally { this.saving = false }
     },
     async replyReview(recordId, reviewId) { const comment = String(this.replyDrafts[reviewId] || '').trim(); if (!comment || this.replying) return; this.replying = reviewId; try { const r = await replyToRecordReview(recordId, reviewId, comment); if (r.code !== 200) throw new Error(r.message); this.replyDrafts[reviewId] = ''; this.toast('回复已添加'); await this.loadHistory(true) } catch(e) { this.toast(e.message || '回复未保存，请重试') } finally { this.replying = '' } },
-    deleteRecord(record) { uni.showModal({ title: '删除记录', content: '确定删除这条记录及其关联展示吗？', success: async r => { if (!r.confirm) return; try { const result = await deleteHealthRecord(record.id); if (result.code !== 200) throw new Error(result.message); if (this.editingId === record.id) this.resetDiet(); await this.loadHistory(true) } catch(e) { this.toast(e.message) } } }) }
+    deleteRecord(record) { uni.showModal({ title: '删除记录', content: '确定删除这条记录及其关联展示吗？', success: async r => { if (!r.confirm) return; try { const result = await deleteHealthRecord(record.id); if (result.code !== 200) throw new Error(result.message); if (this.editingId === record.id) this.resetDiet(); await this.loadHistory(true); this.$refs?.dailyRoutine?.refreshAfterRecord() } catch(e) { this.toast(e.message) } } }) }
   }
 }
 </script>

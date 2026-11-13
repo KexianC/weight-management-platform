@@ -195,7 +195,7 @@ describe('Records reconstruction: edit and complete detail', () => {
     const { service, tx } = setup(null);
     await expect(service.update(req, 'foreign-record', { note: '不可修改' } as HealthRecordPatchDto)).rejects.toBeInstanceOf(NotFoundException);
     await expect(service.detail(req, 'foreign-record')).rejects.toBeInstanceOf(NotFoundException);
-    expect(tx.healthRecord.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'foreign-record', patientId: patient.sub } }));
+    expect(tx.healthRecord.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'foreign-record', patientId: patient.sub, source: { not: 'DAILY_ROUTINE' } } }));
     expect(tx.healthRecord.updateMany).not.toHaveBeenCalled();
   });
 
