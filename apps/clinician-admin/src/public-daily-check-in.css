@@ -37,3 +37,27 @@
 .daily-public-success strong { display: block; margin: 26px 0; font-size: 40px; color: #1a7080; }
 .daily-public-success strong small { font-size: 15px; font-weight: 400; }
 @media(max-width:360px) { .daily-public { padding-left: 12px; padding-right: 12px; }.daily-public-card { padding: 20px 16px; }.daily-weight-input input { padding: 12px 9px; }.daily-weight-input select { flex-basis: 96px; width: 96px; } }
+.daily-metric-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+.daily-sleep-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.daily-sleep-grid input { min-width: 0; min-height: 48px; }
+.daily-sleep-duration { margin: 10px 0 0; color: #187f8d; font-size: 14px; }
+.daily-meals h2 { margin: 0; font-size: 17px; }
+.daily-meals h2 small { color: #82989f; font-size: 12px; font-weight: 400; margin-left: 6px; }
+.daily-meal { min-width: 0; padding: 0 0 22px; margin: 0 0 4px; border: 0; border-bottom: 1px solid #eaf0f2; }
+.daily-meal:last-child { border: 0; margin-bottom: 0; padding-bottom: 0; }
+.daily-photo-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 12px; }
+.daily-photo { position: relative; min-width: 0; border-radius: 10px; background: #f0f7f8; }
+.daily-photo > a { display: block; }
+.daily-photo img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; }
+.daily-public .daily-photo-remove { position: absolute; right: 3px; top: 3px; min-height: 30px; width: 30px; padding: 0; font-size: 23px; border-radius: 50%; color: #324e58; background: #fffffff0; }
+.daily-photo p { font-size: 12px; line-height: 1.5; margin: 6px; overflow-wrap: anywhere; }
+.daily-photo-error { color: #a34432; }
+.daily-public .daily-photo-error button { padding: 5px; min-height: 34px; font-size: 12px; margin: 4px; max-width: calc(100% - 8px); }
+.daily-photo-missing { display: flex; align-items: center; aspect-ratio: 1; padding: 20px 8px 8px; font-size: 12px; color: #7b8f96; }
+.daily-photo-add { display: inline-flex; position: relative; overflow: hidden; margin-top: 12px; padding: 10px 12px; border: 1px dashed #a9cbd1; border-radius: 10px; color: #28727e; font-size: 13px; cursor: pointer; }
+.daily-photo-add input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.daily-photo-add:has(input:disabled) { opacity: .5; cursor: default; }
+.daily-photo-add:focus-within { outline: 2px solid #187f8d; outline-offset: 2px; }
+.daily-meal-error { font-size: 13px; color: #a34432; margin: 10px 0 0; }
+.daily-public button:disabled { opacity: .55; cursor: default; }
+@media(max-width:400px) { .daily-metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }.daily-photo-grid { gap: 6px; } }
