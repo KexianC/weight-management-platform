@@ -221,6 +221,7 @@ function DailyCheckInForm({ token }: { token: string }) {
   }
   const uploading = photos.some(photo => photo.status === 'uploading');
   const sleepDuration = dailySleepMinutes(answers.sleep_start, answers.sleep_end);
+  const clientCode = typeof context?.clientLabel === 'string' ? context.clientLabel.trim().match(/^(?:客户)?([0-9a-f]{8})$/i)?.[1].toUpperCase() : undefined;
   return <main className="daily-public">
     <div className="daily-public-shell">
       <header className="daily-public-brand"><img src={logoUrl} alt="" /><span>MedTalent <small>健康数字助手</small></span></header>
@@ -228,11 +229,11 @@ function DailyCheckInForm({ token }: { token: string }) {
       {loading && <section className="daily-public-card daily-public-loading" role="status"><ReloadIcon className="spin" /> 正在打开您的填报页面…</section>}
       {!loading && !context && <section className="daily-public-card"><h2>暂时无法打开</h2><p role="alert">{error}</p><button type="button" onClick={() => setReload(x => x + 1)}>重新加载</button></section>}
       {!loading && context && (saved ? <section className="daily-public-card daily-public-success" role="status">
-        <CheckCircledIcon /><h2>今日填报已保存</h2><p>{context.date} · {context.clientLabel}</p><strong>{Number(context.record?.weightKg).toFixed(2)} <small>公斤</small></strong>
+        <CheckCircledIcon /><h2>今日填报已保存</h2><p>{context.date}{clientCode && ` · ${clientCode}`}</p><strong>{Number(context.record?.weightKg).toFixed(2)} <small>公斤</small></strong>
         <button type="button" onClick={() => setSaved(false)}>修改今日填报</button>
       </section> : <form onSubmit={submit}>
         <section className="daily-public-card daily-weight-card">
-          <div className="daily-public-date"><span>{context.clientLabel}</span><time dateTime={context.date}>{context.date}</time></div>
+          <div className="daily-public-date">{clientCode && <span>{clientCode}</span>}<time dateTime={context.date}>{context.date}</time></div>
           {context.record && <p className="daily-submitted-note"><CheckCircledIcon /> 今日已填报</p>}
           <label htmlFor="daily-weight" className="daily-weight-label">今日空腹体重 <span>必填</span></label>
           <div className="daily-weight-input"><input id="daily-weight" name="weight" type="number" inputMode="decimal" required min={unit === 'KG' ? 20 : 40} max={unit === 'KG' ? 400 : 800} step="0.01" placeholder={unit === 'KG' ? '例如 65.5' : '例如 131'} value={weight} onChange={event => setWeight(event.target.value)} disabled={saving} /><select aria-label="体重单位" value={unit} onChange={event => changeUnit(event.target.value as 'KG' | 'JIN')} disabled={saving}><option value="KG">公斤 (kg)</option><option value="JIN">斤</option></select></div>
