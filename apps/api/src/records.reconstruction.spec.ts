@@ -38,6 +38,19 @@ const dietRow = (overrides = {}) => ({
 });
 
 describe('Records reconstruction: validation and persistence', () => {
+  it('keeps daily check-in weight synchronization exclusive to the daily form', async () => {
+    const ordinary = setup(dietRow({ recordType: 'WEIGHT', weightKg: 70 }));
+    await expect(ordinary.service.create(req, { recordType: 'WEIGHT', weightKg: 70, source: 'DAILY_CHECK_IN' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(ordinary.service.update(req, 'record-1', { recordType: 'WEIGHT', source: 'DAILY_CHECK_IN' })).rejects.toBeInstanceOf(BadRequestException);
+    const daily = setup(dietRow({ recordType: 'WEIGHT', source: 'DAILY_CHECK_IN', weightKg: 70 }));
+    await expect(daily.service.update(req, 'record-1', { recordType: 'WEIGHT', weightKg: 69 })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(daily.service.remove(req, 'record-1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(ordinary.tx.healthRecord.create).not.toHaveBeenCalled();
+    expect(ordinary.tx.healthRecord.updateMany).not.toHaveBeenCalled();
+    expect(daily.tx.healthRecord.updateMany).not.toHaveBeenCalled();
+    expect(daily.tx.healthRecord.delete).not.toHaveBeenCalled();
+  });
+
   it.each([['KG', 70, 70], ['JIN', 140, 70], ['LB', 154.32358353, 70]])('stores %s input in canonical kg', async (weightUnit, weightValue, weightKg) => {
     const { service, tx } = setup();
     const result = await service.create(req, { recordType: 'WEIGHT', weightUnit: weightUnit as string, weightValue: weightValue as number, waistCm: 85, hipCm: 99 });

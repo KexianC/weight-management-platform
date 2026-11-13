@@ -8,6 +8,7 @@ import { ReportDocuments, OcrWorkflow } from './ReportWorkflow';
 import HealthManagerRecords from './HealthManagerRecords';
 import NutritionWorkbench from './NutritionWorkbench';
 import YuanqizhanRecords from './YuanqizhanRecords';
+import DailyCheckInPanel from './DailyCheckInPanel';
 
 const errorText = (e: unknown) => e instanceof Error ? e.message : '操作失败，请重试';
 const dateTimeInput = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
@@ -65,10 +66,11 @@ function CareClientDetail({ id, user, initialSection }: { id: string; user: Prac
   const clinical = ['NUTRITIONIST','DOCTOR','HEALTH_MANAGER'].includes(user.role);
   const managerReadOnly = user.role === 'HEALTH_MANAGER';
   const ownClient = ownsCareClient(resource.data, user);
-  const tabs = [['overview','客户概况'],['body','体测指标'],['reports','健康报告'],...(user.role==='NUTRITIONIST'?[['yuanqizhan','元气盏打卡']]:[]),...(managerReadOnly?[['history','全部业务记录']]:[]),...(clinical ? [['nutrition','餐食点评'],['plans','饮食方案'],['summaries','阶段总结'],['followups','复查安排']] : []),['exercise','运动处方'],...(user.role !== 'NUTRITIONIST' ? [['photos','体态照片']] : []),...(['HEALTH_MANAGER','DOCTOR'].includes(user.role) ? [['consent','知情书照片']] : [])];
+  const tabs = [['overview','客户概况'],...(clinical ? [['daily-check-in','每日填报']] : []),['body','体测指标'],['reports','健康报告'],...(user.role==='NUTRITIONIST'?[['yuanqizhan','元气盏打卡']]:[]),...(managerReadOnly?[['history','全部业务记录']]:[]),...(clinical ? [['nutrition','餐食点评'],['plans','饮食方案'],['summaries','阶段总结'],['followups','复查安排']] : []),['exercise','运动处方'],...(user.role !== 'NUTRITIONIST' ? [['photos','体态照片']] : []),...(['HEALTH_MANAGER','DOCTOR'].includes(user.role) ? [['consent','知情书照片']] : [])];
   return <><CareError message={resource.error} />{resource.error && <button onClick={resource.reload}>重试加载档案</button>}{resource.loading && <Notice>正在加载客户档案…</Notice>}{resource.data && <><section className="care-client-header"><div><p className="eyebrow">{resource.data.enrollment?.clientCode ?? '历史客户 · 未建立服务档案'}</p><h2>{resource.data.patient.displayName}</h2><p>{resource.data.enrollment?.packageName ?? '未登记套餐'}{resource.data.patient.phone && ' · ' + resource.data.patient.phone}</p></div><button onClick={resource.reload}>刷新档案</button></section><nav className="care-tabs" aria-label="客户档案栏目">{tabs.map(([key,label]) => <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{label}</button>)}</nav>
     {tab === 'overview' && <><LifestyleView client={resource.data} />{ownClient&&resource.data.enrollment&&<AssignmentEditor client={resource.data} enrollment={resource.data.enrollment} onSaved={resource.reload}/>}</>}
     {tab === 'history' && managerReadOnly && <HealthManagerRecords id={id}/>}
+    {tab === 'daily-check-in' && clinical && <DailyCheckInPanel patientId={id} canManageLink={['HEALTH_MANAGER','DOCTOR'].includes(user.role)} />}
     {tab === 'yuanqizhan' && user.role === 'NUTRITIONIST' && <YuanqizhanRecords patientId={id}/>}
     {tab === 'reports' && <ReportDocuments id={id} user={user} readOnly={managerReadOnly&&!ownClient} />}
     {tab === 'body' && <BodyReports client={resource.data} user={user} onSaved={resource.reload} />}

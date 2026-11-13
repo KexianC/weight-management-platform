@@ -8,6 +8,7 @@
     <button v-if="!client.enrollment && client.patient.status==='ACTIVE'" @tap="go('/pages/health-manager/enroll',id)">补齐管理档案（保留账号密码）</button>
   </view>
   <view v-if="client" class="role-panel lifestyle-summary"><text class="role-section">生活习惯调查表</text><view v-for="row in lifestyleRows" :key="row.key" class="lifestyle-summary-row"><text class="role-label">{{ row.label }}</text><text class="role-text">{{ row.value }}</text></view><text v-if="lifestyleHint" class="role-hint">{{ lifestyleHint }}</text></view>
+  <DailyCheckInShare v-if="writable" ref="dailyCheckInShare" :patient-id="id" :can-share="writable" :page-active="dailyPageActive" :active-revision="dailyRevision" />
   <form v-if="writable" @submit="saveAssignment" class="role-panel">
     <text class="role-section">套餐与服务分配</text><text class="role-hint">更新人员将同步后端服务关系；原报告与业务记录保留。</text>
     <view class="role-field"><text class="role-label">购买套餐</text><input name="packageName" :value="assignment.packageName" @input="assignment.packageName=$event.detail.value" maxlength="120" /></view>
@@ -28,11 +29,15 @@ import { lifestyleRows as displayLifestyleRows, lifestyleHistoryHint } from '../
 import StaffChoice from '../../components/StaffChoice.vue'
 import StaffRoleNav from '../../components/StaffRoleNav.vue'
 import LifestyleFields from '../../components/LifestyleFields.vue'
+import DailyCheckInShare from '../../components/DailyCheckInShare.vue'
 import { care, staffPage, call, pathId } from '../../utils/staff-care.js'
 import { canWriteClient, inputSnapshot, lifestylePayload, safeBusinessText } from '../../utils/staff-role-model.js'
-export default {components:{StaffRoleNav,LifestyleFields,StaffChoice},mixins:[staffPage('HEALTH_MANAGER')],data:()=>({id:'',client:null,staff:{},assignment:{},lifestyle:{},sections:[],followLoading:false,followEpoch:0,
+export default {components:{StaffRoleNav,LifestyleFields,StaffChoice,DailyCheckInShare},mixins:[staffPage('HEALTH_MANAGER')],data:()=>({id:'',client:null,staff:{},assignment:{},lifestyle:{},sections:[],followLoading:false,followEpoch:0,dailyPageActive:false,dailyRevision:0,
  assignmentFields:[{key:'doctorId',list:'doctors',label:'归属医生'},{key:'nutritionistId',list:'nutritionists',label:'营养师'},{key:'exerciseCoachId',list:'exerciseCoaches',label:'运动老师'}]}),
  onLoad(q){this.id=q.id||''},computed:{writable(){return canWriteClient(this.client,this.actor)},lifestyleRows(){return displayLifestyleRows(this.client?.lifestyle)},lifestyleHint(){return lifestyleHistoryHint(this.client?.lifestyle)}},
+ onShow(){this.dailyPageActive=true;this.dailyRevision++},
+ onHide(){this.dailyPageActive=false;this.$refs.dailyCheckInShare?.suspend()},
+ onUnload(){this.dailyPageActive=false;this.$refs.dailyCheckInShare?.suspend()},
  methods:{
   async loadPage(){return this.read(async()=>{
     const epoch=++this.followEpoch
@@ -46,6 +51,6 @@ export default {components:{StaffRoleNav,LifestyleFields,StaffChoice},mixins:[st
   choices(g){return [{id:'',displayName:'请选择'},...(this.staff[g.list]||[])]},position(g){return Math.max(0,this.choices(g).findIndex(x=>x.id===this.assignment[g.key]))},select(g,e){this.assignment[g.key]=this.choices(g)[Number(e.detail.value)]?.id||''},name(g){return this.staff[g.list]?.find(x=>x.id===this.assignment[g.key])?.displayName},
   saveAssignment(e){return this.run(async()=>{if(!this.writable)throw new Error('此客户只读');const values=e.detail.value;const dto={...inputSnapshot(this.assignment,values),lifestyle:lifestylePayload(inputSnapshot(this.lifestyle,values))};if(!dto.packageName.trim()||this.assignmentFields.some(g=>!dto[g.key]))throw new Error('请完整核对套餐和服务人员');await care.assign(this.id,dto);uni.showToast({title:'分配与问卷已保存',icon:'none'});await this.loadPage()})},
   readable(item,key){const allowed=key==='archive'?['answers','status']:key==='tasks'?['description','status','dueAt']:key==='followups'?['type','status','scheduledAt','dueAt','result','note']:key==='plans'?['content','goals','recommendations','startDate','endDate','status','publishedAt','templateSnapshot']:['content','summary','metrics','recommendations','periodStart','periodEnd','publishedAt'];return safeBusinessText(Object.fromEntries(allowed.filter(k=>item[k]!=null).map(k=>[k,item[k]])))},
-  clearPrivate(){this.followEpoch++;this.client=null;this.sections=[];this.staff={};this.assignment={};this.lifestyle={}}
+  clearPrivate(){this.followEpoch++;this.$refs.dailyCheckInShare?.suspend();this.client=null;this.sections=[];this.staff={};this.assignment={};this.lifestyle={}}
  }}
 </script><style scoped lang="scss">@import '../../styles/role-workspace.scss';.role-record{padding:14px 0;border-bottom:1px solid #edf1f4}.lifestyle-summary-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:8px 0}.lifestyle-summary-row .role-label,.lifestyle-summary-row .role-text{margin:0;overflow-wrap:anywhere}.lifestyle-summary-row .role-text{text-align:right}</style>

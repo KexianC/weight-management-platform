@@ -224,6 +224,8 @@ model User {
   ocrDraftsCreated          OcrDraft[]
   yuanqizhanMemberships     YuanqizhanMember[]
   yuanqizhanRecords         YuanqizhanDailyRecord[]
+  dailyCheckInLink          DailyCheckInLink?
+  dailyCheckInRecords       DailyCheckInRecord[]
 
   @@unique([phone, role])
 }
@@ -378,6 +380,7 @@ model HealthRecord {
   patient            User                 @relation(fields: [patientId], references: [id])
   assets             MediaAsset[]
   reviews            HealthRecordReview[]
+  dailyCheckIn       DailyCheckInRecord?
 
   @@index([patientId, measuredAt])
   @@index([patientId, recordType, measuredAt])
@@ -1008,4 +1011,32 @@ model YuanqizhanPhoto {
   asset        MediaAsset                @relation(fields: [assetId], references: [id], onDelete: Restrict)
 
   @@index([memberId, date, slot])
+}
+
+// A long-lived capability grants only today's check-in, never an authenticated session.
+model DailyCheckInLink {
+  id          String    @id @default(cuid())
+  patientId   String    @unique
+  nonce       String    @db.VarChar(43)
+  tokenHash   String    @unique @db.Char(64)
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  patient     User      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+}
+
+model DailyCheckInRecord {
+  id             String       @id @default(cuid())
+  patientId      String
+  date           String       @db.Char(10)
+  version        Int          @default(1)
+  weightKg       Decimal      @db.Decimal(5, 2)
+  answers        Json
+  healthRecordId String       @unique
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  patient        User         @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  healthRecord   HealthRecord @relation(fields: [healthRecordId], references: [id], onDelete: Restrict)
+
+  @@unique([patientId, date])
 }

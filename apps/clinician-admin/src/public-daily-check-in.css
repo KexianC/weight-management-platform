@@ -1,0 +1,39 @@
+.daily-public { min-height: 100vh; padding: 24px 18px 32px; background: linear-gradient(180deg,#e8f6f6 0,#f4f8fa 350px); color: #183c43; }
+.daily-public-shell { max-width: 560px; margin: 0 auto; }
+.daily-public-brand { display: flex; align-items: center; gap: 8px; color: #206975; font-size: 16px; font-weight: 750; }
+.daily-public-brand img { width: 32px; height: 32px; object-fit: contain; }
+.daily-public-brand small { display: block; margin-top: 2px; font-size: 10px; font-weight: 500; }
+.daily-public-intro { padding: 33px 3px 13px; }
+.daily-public h1 { margin: 0 0 10px; font-size: 30px; letter-spacing: -.02em; }
+.daily-public-card { background: white; padding: 24px; margin-bottom: 16px; border: 1px solid #dcebed; border-radius: 20px; box-shadow: 0 7px 28px #20424c05; }
+.daily-public button { border: 1px solid #bdd9dd; border-radius: 12px; background: white; padding: 12px 18px; color: #216c77; cursor: pointer; min-height: 46px; }
+.daily-public-date { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 21px; margin-bottom: 24px; border-bottom: 1px solid #eaf0f2; color: #668088; font-size: 13px; }
+.daily-weight-label { font-size: 17px; font-weight: 700; }
+.daily-weight-label > span { color: #c96749; background: #fff2e9; border-radius: 5px; padding: 3px 6px; margin-left: 6px; font-size: 11px; font-weight: 500; vertical-align: middle; }
+.daily-weight-input { display: flex; align-items: stretch; gap: 10px; margin-top: 18px; }
+.daily-weight-input input { width: 100%; min-width: 0; border: 1px solid #c6dde1; border-radius: 12px; padding: 13px 15px; color: #155b68; background: #f7fbfc; font-size: 30px; font-weight: 650; }
+.daily-weight-input input::placeholder { font-size: 20px; font-weight: 400; color: #9bafb5; }
+.daily-weight-input select { flex: 0 0 106px; width: 106px; padding: 8px; border: 1px solid #c6dde1; border-radius: 12px; background: white; color: #416873; font-size: 14px; }
+.daily-submitted-note { color: #287d64; background: #edf8f0; padding: 10px; font-size: 12px; border-radius: 8px; display: flex; align-items: center; gap: 6px; }
+.daily-optional { padding: 20px 24px; }
+.daily-optional summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; cursor: pointer; font-weight: 650; list-style: none; min-height: 30px; }
+.daily-optional summary::-webkit-details-marker { display: none; }
+.daily-optional summary small { margin-left: 6px; color: #82989f; font-size: 12px; font-weight: 400; }
+.daily-expand-icon { color: #60848c; width: 18px; height: 18px; flex-shrink: 0; }
+.daily-optional[open] .daily-expand-icon { transform: rotate(180deg); }
+.daily-optional fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.daily-answer-field { display: block; margin-top: 22px; font-size: 14px; line-height: 1.6; color: #365b65; }
+.daily-answer-field input,.daily-answer-field select,.daily-answer-field textarea { display: block; width: 100%; max-width: 100%; margin-top: 8px; border: 1px solid #d4e3e7; border-radius: 10px; padding: 12px 10px; font-size: 16px; color: #375f69; background: #fafcfd; }
+.daily-answer-field textarea { resize: vertical; }
+.daily-public .daily-public-submit { width: 100%; margin-top: 6px; border: 0; background: #187f8d; color: white; font-size: 16px; font-weight: 700; padding: 17px 20px; box-shadow: 0 5px 14px #187f8d16; }
+.daily-public .daily-public-submit:hover:not(:disabled) { background: #106d7a; }
+.daily-public-error { color: #a34432; background: #fff1ed; border: 1px solid #efd2c8; border-radius: 12px; padding: 14px; margin: 16px 0; font-size: 14px; line-height: 1.7; }
+.daily-public-error button { display: block; margin-top: 12px; }
+.daily-public-loading { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 160px; color: #6c8791; font-size: 14px; }
+.daily-public-success { text-align: center; padding-top: 38px; padding-bottom: 34px; }
+.daily-public-success > svg { width: 48px; height: 48px; color: #279775; margin-bottom: 17px; }
+.daily-public-success h2 { font-size: 24px; }
+.daily-public-success p { font-size: 13px; color: #738c94; line-height: 1.9; }
+.daily-public-success strong { display: block; margin: 26px 0; font-size: 40px; color: #1a7080; }
+.daily-public-success strong small { font-size: 15px; font-weight: 400; }
+@media(max-width:360px) { .daily-public { padding-left: 12px; padding-right: 12px; }.daily-public-card { padding: 20px 16px; }.daily-weight-input input { padding: 12px 9px; }.daily-weight-input select { flex-basis: 96px; width: 96px; } }
