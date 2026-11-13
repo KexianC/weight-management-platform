@@ -10,6 +10,8 @@
         <view class="actions"><button @click="openMessages">客户留言</button><button @click="createFollow">新建随访</button><button @click="openFollow">随访记录</button></view>
       </view>
 
+      <DailyCheckInShare ref="dailyCheckInShare" :patient-id="patientId" :can-share="true" :page-active="pageActive" :active-revision="activeRevision" />
+
       <view class="panel">
         <text class="section-title">身体指标</text>
         <text v-if="!client.bodyReports.length" class="muted">暂无已核验的人体成分数据</text>
@@ -81,11 +83,12 @@
 
 <script>
 import YuanqizhanClientRecords from './YuanqizhanClientRecords.vue'
+import DailyCheckInShare from '../../components/DailyCheckInShare.vue'
 import { SHARE_DAYS, getManagedClient, getNutritionRecords, getRecordReviews, addRecordReview, shareExerciseReport, revokeExerciseShare, restrictedShareText, reportFingerprint, shareState, createShareRequestKey, careSessionIdentity, shareDeliveryMessage, loadShareAttempt, saveShareAttempt, clearShareAttempt } from '../../utils/managed-care.js'
 import { resolveMediaFile, releaseMediaFile } from '../../utils/media-access.js'
 
 export default {
-  components: { YuanqizhanClientRecords },
+  components: { YuanqizhanClientRecords, DailyCheckInShare },
   props: { patientId: { type: String, required: true }, activeRevision: { type: Number, default: 0 }, pageActive: { type: Boolean, default: false } },
   data() { return { client: null, loading: true, error: '', records: [], recordsPage: 0, recordsTotal: 0, recordsLoading: false, recordsError: '', recordFilter: 'ALL', filters: [{ value: 'ALL', label: '全部' }, { value: 'DIET', label: '饮食' }, { value: 'WEIGHT', label: '体重' }, { value: 'SLEEP', label: '睡眠' }], reviewed: {}, expiryIndexes: {}, expiryLabels: SHARE_DAYS.map((days) => `${days} 天`), busy: false, reviews: {}, reviewDrafts: {}, reviewErrors: {}, shareAttempts: {}, mediaPaths: {}, mediaErrors: {}, videoPath: '', loadSequence: 0, recordsSequence: 0, reviewSequences: {}, videoSequence: 0, ownerSession: '', ownerPatientId: '' } },
   computed: { filteredRecords() { return this.records.filter((row) => this.recordFilter === 'ALL' || row.recordType === this.recordFilter) } },
@@ -110,9 +113,11 @@ export default {
       return this.pageActive && context.sequence === this.loadSequence && context.patientId === this.patientId
     },
     clearPrivateState() {
+      this.$refs?.dailyCheckInShare?.suspend()
       this.loadSequence++; this.releaseMedia(); this.client = null; this.records = []; this.reviews = {}; this.reviewDrafts = {}; this.reviewErrors = {}; this.reviewed = {}; this.shareAttempts = {}; this.expiryIndexes = {}; this.ownerSession = ''; this.ownerPatientId = ''; this.loading = false; this.recordsLoading = false; this.busy = false
     },
     suspend() {
+      this.$refs?.dailyCheckInShare?.suspend()
       // Keep drafts only for the same in-memory account/page; opaque request keys are account-scoped.
       // Late network/media responses cannot repopulate hidden page data.
       this.loadSequence++; this.releaseMedia(); this.client = null; this.records = []; this.reviews = {}; this.reviewErrors = {}; this.loading = false; this.recordsLoading = false; this.busy = false

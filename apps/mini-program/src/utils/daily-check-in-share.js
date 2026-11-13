@@ -9,12 +9,12 @@ export function dailyShareIdentity() {
 
 export function canShareDailyCheckIn() {
   const actor = getStorage('userInfo') || {}
-  return Boolean(getStorage('token') && idOf(actor) && !actor.mustChangePassword && ['HEALTH_MANAGER', 'DOCTOR'].includes(roleOf(actor)))
+  return Boolean(getStorage('token') && idOf(actor) && !actor.mustChangePassword && ['HEALTH_MANAGER', 'DOCTOR', 'NUTRITIONIST'].includes(roleOf(actor)))
 }
 
 async function readDaily(patientId, suffix, data = {}) {
   if (!/^[A-Za-z0-9_-]{1,191}$/.test(String(patientId || ''))) throw new Error('客户标识无效，请重新进入客户档案')
-  if (!canShareDailyCheckIn()) throw new Error('请使用负责此客户的健管师或医生账号')
+  if (!canShareDailyCheckIn()) throw new Error('请使用负责此客户的健管师、医生或营养师账号')
   const identity = dailyShareIdentity()
   const response = await get(`/care-management/patients/${encodeURIComponent(patientId)}/daily-check-in/${suffix}`, data, { loading: false, showError: false })
   if (!canShareDailyCheckIn() || identity !== dailyShareIdentity()) throw new Error('账号已切换，请重新进入客户档案')
@@ -31,7 +31,10 @@ export async function getDailyCheckInLink(patientId) {
 export async function getDailyCheckInRecords(patientId) {
   const result = await readDaily(patientId, 'records', { page: 1 })
   if (!Array.isArray(result?.items)) throw new Error('填报记录暂不可用，请稍后重试')
-  return result.items.slice(0, 5).map(record => ({ date: String(record.date || '').slice(0, 10), weightKg: record.weightKg, version: record.version }))
+  return {
+    canViewLink: result.canViewLink === undefined ? result.canManageLink === true : result.canViewLink === true,
+    items: result.items.slice(0, 5).map(record => ({ date: String(record.date || '').slice(0, 10), weightKg: record.weightKg, version: record.version }))
+  }
 }
 
 export async function dailyCheckInQrAsset(dataUrl) {

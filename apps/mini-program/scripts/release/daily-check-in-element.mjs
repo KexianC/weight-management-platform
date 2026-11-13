@@ -14,7 +14,7 @@ export function registerDailyCheckInElement({ get, user, copy }) {
     attributeChangedCallback() { if (this.isConnected) this.resume() }
     allowed() {
       const actor = user() || {}
-      return !!(actor.userId || actor.id) && !actor.mustChangePassword && ['HEALTH_MANAGER', 'DOCTOR'].includes(String(actor.backendRole || actor.role || '').toUpperCase())
+      return !!(actor.userId || actor.id) && !actor.mustChangePassword && ['HEALTH_MANAGER', 'DOCTOR', 'NUTRITIONIST'].includes(String(actor.backendRole || actor.role || '').toUpperCase())
     }
     suspend() { this.epoch++; this.active = false; this.link = ''; this.owner = ''; this.loading = false; this.shadowRoot.replaceChildren() }
     resume() { this.suspend(); this.active = true; this.draw() }
@@ -39,10 +39,11 @@ export function registerDailyCheckInElement({ get, user, copy }) {
         const history = (await get(`${base}/records`, { page: 1 }, { loading: false, showError: false })).data
         if (!this.current(context)) return
         if (!Array.isArray(history?.items)) throw new Error('填报记录暂不可用，请稍后重试')
-        if (history.canManageLink === true) {
+        const canViewLink = history.canViewLink === undefined ? history.canManageLink === true : history.canViewLink === true
+        if (canViewLink) {
           const share = (await get(`${base}/link`, {}, { loading: false, showError: false })).data
           if (!this.current(context)) return
-          if (share?.revoked) this.text('p', '填报链接已停用，请在电脑管理端重新启用。', result)
+          if (share?.revoked) this.text('p', '填报链接已停用，请联系负责的健管师或医生在电脑管理端重新启用。', result)
           else {
             if (typeof share?.url !== 'string') throw new Error('专属链接暂不可用')
             const url = new URL(share.url)
@@ -57,7 +58,7 @@ export function registerDailyCheckInElement({ get, user, copy }) {
               copy({ data: this.link, success: () => { if (this.current(context)) error.textContent = '已复制，请发到该客户服务群。' }, fail: () => { if (this.current(context)) error.textContent = '复制失败，请重试。' } })
             })
           }
-        } else this.text('p', '此客户的填报记录可查看，专属链接由负责的健管师或医生管理。', result)
+        } else this.text('p', '当前仅可查看填报记录，专属链接仅对负责此客户的健管师、医生或营养师开放。', result)
         this.text('h4', '最近填报', result)
         const rows = history.items.slice(0, 5)
         for (const row of rows) { const line = this.text('div', '', result, 'record'); this.text('span', String(row.date || '').slice(0, 10), line); this.text('span', `${row.weightKg} kg`, line) }

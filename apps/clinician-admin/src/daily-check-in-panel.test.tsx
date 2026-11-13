@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import DailyCheckInPanel, { DailyCheckInRecordView } from './DailyCheckInPanel';
+import DailyCheckInPanel, { DailyCheckInRecordView, DailyCheckInShareView } from './DailyCheckInPanel';
 import { dailyCheckInAnswerLabel, dailyCheckInQuestions, dailyCheckInShareUrl } from './daily-check-in-api';
 
 describe('daily check-in saved answer display', () => {
@@ -38,5 +38,31 @@ describe('daily check-in sharing URL', () => {
   it('rejects script, relative and embedded-credential links', () => {
     for (const url of ['javascript:alert(1)', '/#/daily-check-in/test', 'https://user:password@example.com/#/daily-check-in/test']) expect(dailyCheckInShareUrl(url)).toBeNull();
     expect(dailyCheckInShareUrl('https://example.com/#/daily-check-in/test')).toBe('https://example.com/#/daily-check-in/test');
+  });
+});
+
+describe('daily check-in share permissions', () => {
+  const actions = { onAction: () => {}, onCopy: () => {}, onConfirm: () => {} };
+  const link = { url: 'https://example.com/#/daily-check-in/synthetic', qrDataUrl: 'data:image/png;base64,aGVsbG8=', revoked: false };
+  it('lets assigned nutritionists obtain and copy the link and QR without lifecycle controls', () => {
+    const unopened = renderToStaticMarkup(<DailyCheckInShareView mayView mayManage={false} {...actions} />);
+    expect(unopened).toContain('查看专属链接与二维码');
+    const opened = renderToStaticMarkup(<DailyCheckInShareView mayView mayManage={false} link={link} confirmation="reset" {...actions} />);
+    for (const text of ['复制链接', '复制群通知文案', '下载二维码', link.url, link.qrDataUrl]) expect(opened).toContain(text);
+    for (const text of ['daily-staff-manage', 'daily-staff-confirm', '>重置链接<', '>停用链接<', '确认生成新链接']) expect(opened).not.toContain(text);
+  });
+  it('asks nutritionists to contact the responsible staff for a revoked link', () => {
+    const html = renderToStaticMarkup(<DailyCheckInShareView mayView mayManage={false} link={{ ...link, revoked: true }} {...actions} />);
+    expect(html).toContain('请联系负责的健管师或医生重新启用');
+    for (const text of ['请生成新链接', '生成新链接</button>', link.url, link.qrDataUrl]) expect(html).not.toContain(text);
+  });
+  it('hides stale links and confirmation controls when view permission is withdrawn', () => {
+    const html = renderToStaticMarkup(<DailyCheckInShareView mayView={false} mayManage link={link} confirmation="reset" {...actions} />);
+    expect(html).toBe('');
+  });
+  it('preserves reset and revoke controls for permitted managers', () => {
+    const html = renderToStaticMarkup(<DailyCheckInShareView mayView mayManage link={link} {...actions} />);
+    expect(html).toContain('>重置链接</button>');
+    expect(html).toContain('>停用链接</button>');
   });
 });
