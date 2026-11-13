@@ -235,6 +235,7 @@ export class RecordsService {
 
   async create(req: Request, input: HealthRecordDto) {
     const actor = await this.patientActor(req);
+    if (input.source === 'DAILY_CHECK_IN') throw new BadRequestException('每日填报记录请通过专属链接提交');
     const { dto, measuredAt } = this.normalizeRecord(input);
     const stable=(value:any):any=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).filter(([key,v])=>key!=='idempotencyKey'&&v!==undefined).sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>[key,stable(v)])):value;
     const fingerprint=createHash('sha256').update(JSON.stringify(stable(input))).digest('hex');
@@ -269,8 +270,10 @@ export class RecordsService {
 
   async update(req: Request, id: string, patch: HealthRecordPatchDto) {
     const actor = await this.patientActor(req);
+    if (patch.source === 'DAILY_CHECK_IN') throw new BadRequestException('不能将普通健康记录改为每日填报记录');
     const existing = await this.prisma.healthRecord.findFirst({ where: { id, patientId: actor.sub } });
     if (!existing) throw new NotFoundException('健康记录不存在');
+    if (existing.source === 'DAILY_CHECK_IN') throw new BadRequestException('请通过专属每日填报链接修改这条记录');
     if (patch.recordType && patch.recordType !== existing.recordType) throw new BadRequestException('不能更改已有记录的类型，请新建记录');
     const edits = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as Partial<HealthRecordDto>;
     const merged: HealthRecordDto = {
@@ -314,6 +317,7 @@ export class RecordsService {
     const actor = await this.patientActor(req);
     const record = await this.prisma.healthRecord.findFirst({ where: { id, patientId: actor.sub } });
     if (!record) throw new NotFoundException('健康记录不存在');
+    if (record.source === 'DAILY_CHECK_IN') throw new BadRequestException('每日填报记录需要保留，请通过专属链接修改当天信息');
     await this.prisma.$transaction(async (tx) => {
       await tx.auditLog.create({ data: { actorId: actor.sub, action: 'HEALTH_RECORD_DELETE', resourceType: 'HEALTH_RECORD', resourceId: id, metadata: { recordType: record.recordType, measuredAt: record.measuredAt } } });
       await tx.healthRecord.delete({ where: { id } });

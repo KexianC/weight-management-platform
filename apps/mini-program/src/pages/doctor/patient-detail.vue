@@ -24,6 +24,7 @@
 				</view>
 			</view>
 
+			<DailyCheckInShare ref="dailyCheckInShare" :patient-id="patientId" :can-share="!nutritionistView" :page-active="pageActive" :active-revision="activeRevision" />
 			<view class="metric-grid">
 				<view class="metric-card">
 					<text class="metric-value">{{ metric(patient.currentWeight) }}</text>
@@ -105,11 +106,12 @@
 <script>
 import store from '../../store/index.js'
 import NutritionistClient from './NutritionistClient.vue'
+import DailyCheckInShare from '../../components/DailyCheckInShare.vue'
 import { isNutritionist } from '../../utils/managed-care.js'
 import { getPatientDetail } from '../../utils/api.js'
 
 export default {
-	components: { NutritionistClient },
+	components: { NutritionistClient, DailyCheckInShare },
 	data() {
 		return {
 			patientId: '',
@@ -164,8 +166,8 @@ export default {
 		if (!this.nutritionistView) this.loadPatient()
 	},
 	onShow() { this.pageActive = true; this.activeRevision++ },
-	onHide() { this.pageActive = false; this.$refs.nutritionistClient?.suspend() },
-	onUnload() { this.pageActive = false; this.$refs.nutritionistClient?.suspend() },
+	onHide() { this.pageActive = false; this.$refs.nutritionistClient?.suspend(); this.$refs.dailyCheckInShare?.suspend() },
+	onUnload() { this.pageActive = false; this.$refs.nutritionistClient?.suspend(); this.$refs.dailyCheckInShare?.suspend() },
 	methods: {
 		async loadPatient() {
 			this.loading = true

@@ -11,7 +11,9 @@ import { api, ApiError } from './api';
 import ArchiveView from './ArchiveView';
 import AdminConsole from './AdminConsole';
 import ManagedCare from './ManagedCare';
+import PublicDailyCheckIn from './PublicDailyCheckIn';
 import YuanqizhanActivity from './YuanqizhanActivity';
+import DailyCheckInPanel from './DailyCheckInPanel';
 import { archiveCompletion } from './archive-schema';
 import logoUrl from './assets/medtalent-logo.png';
 import {
@@ -150,8 +152,8 @@ function PatientsView({ patients, total, onOpen, onCreatePatient, onCreateFollow
   </section>;
 }
 
-function PatientDetailView({ patientId, practitionerId, onBack, onCreateFollowUp, onMessage, onOpenArchive, onTaskCreated }: {
-  patientId: string; practitionerId: string; onBack: () => void; onCreateFollowUp: (patient: Patient) => void;
+function PatientDetailView({ patientId, practitionerId, practitionerRole, onBack, onCreateFollowUp, onMessage, onOpenArchive, onTaskCreated }: {
+  patientId: string; practitionerId: string; practitionerRole: Practitioner['role']; onBack: () => void; onCreateFollowUp: (patient: Patient) => void;
   onMessage: (patient: Patient) => void; onOpenArchive: (patient: Patient) => void; onTaskCreated: () => void;
 }) {
   const [patient, setPatient] = useState<Patient>(); const [records, setRecords] = useState<HealthRecord[]>([]); const [followUps, setFollowUps] = useState<FollowUp[]>([]);
@@ -177,6 +179,7 @@ function PatientDetailView({ patientId, practitionerId, onBack, onCreateFollowUp
   return <><div className="detail-toolbar"><button className="back-button" onClick={onBack}><ArrowLeftIcon />返回患者列表</button><div><button onClick={() => onMessage(patient)}><ChatBubbleIcon />发消息</button><button onClick={() => setTaskOpen(true)}><ClipboardIcon />下发任务</button><button onClick={() => onCreateFollowUp(patient)}><PlusIcon />创建随访</button><button className="primary" onClick={() => setSummaryOpen(true)}><ReaderIcon />发布总结</button></div></div>
     <section className="patient-hero panel"><div className="hero-person"><i>{initials(patient.displayName)}</i><div><h2>{patient.displayName}</h2><p>{compactPhone(patient.phone)} · {patient.gender ?? '性别未填写'} · {patient.age === undefined ? '年龄未填写' : `${patient.age}岁`}</p><span className={`risk risk-${patient.riskLevel?.toLowerCase() ?? 'unknown'}`}>{riskLabel(patient.riskLevel)}</span></div></div><div className="hero-metrics"><div><small>当前体重</small><b>{displayMetric(patient.currentWeightKg, ' kg')}</b></div><div><small>BMI</small><b>{displayMetric(patient.bmi)}</b></div><div><small>目标体重</small><b>{displayMetric(patient.targetWeightKg, ' kg')}</b></div><div><small>依从度</small><b>{patient.adherencePct === undefined ? '--' : `${patient.adherencePct.toFixed(0)}%`}</b></div></div></section>
     <section className="archive-summary-card panel"><div className="archive-summary-icon"><ReaderIcon /></div><div><div className="archive-summary-heading"><h2>中医体重管理档案</h2><span className={`archive-state archive-state-${archiveStatus?.toLowerCase() ?? 'empty'}`}>{archiveStatus === 'COMPLETED' ? '已完成' : archiveStatus === 'DRAFT' ? '草稿' : '未建档'}</span></div><p>{archiveStatus ? `当前完成度 ${archivePercent}%${patient.archiveUpdatedAt ? ` · 最近更新 ${formatDateTime(patient.archiveUpdatedAt)}` : ''}` : '尚未录入纸质档案中的疾病、检验、生活方式与管理计划。'}</p><div className="archive-summary-progress"><span style={{ width: `${archivePercent}%` }} /></div></div><button className={archiveStatus ? '' : 'primary'} onClick={() => onOpenArchive(patient)}><ClipboardIcon />{archiveActionLabel}</button></section>
+    {['HEALTH_MANAGER','DOCTOR','NUTRITIONIST'].includes(practitionerRole) && <DailyCheckInPanel patientId={patientId} canManageLink={['HEALTH_MANAGER','DOCTOR'].includes(practitionerRole)} />}
     <section className="detail-grid"><div className="panel chart-panel"><div className="panel-title"><div><h2>体重趋势</h2><p>来源于患者提交的体重记录</p></div><span>{chartData.length} 条记录</span></div>{chartData.length ? <div className="weight-chart"><ResponsiveContainer><LineChart data={chartData}><CartesianGrid stroke="#e9f0f2" vertical={false} /><XAxis dataKey="date" axisLine={false} tickLine={false} /><YAxis domain={['dataMin - 2', 'dataMax + 2']} axisLine={false} tickLine={false} width={38} /><Tooltip formatter={(value) => [`${value} kg`, '体重']} /><Line isAnimationActive={false} type="monotone" dataKey="weight" stroke="#1488ad" strokeWidth={3} dot={{ fill: '#fff', stroke: '#1488ad', strokeWidth: 2, r: 3 }} /></LineChart></ResponsiveContainer></div> : <EmptyState title="暂无体重趋势" detail="患者提交体重记录后将自动生成曲线。" />}</div>
       <div className="panel profile-panel"><div className="panel-title"><div><h2>基础信息</h2><p>患者档案与授权信息</p></div></div><dl><div><dt>身高</dt><dd>{displayMetric(patient.heightCm, ' cm', 0)}</dd></div><div><dt>病史</dt><dd>{patient.medicalHistory ?? '未填写'}</dd></div><div><dt>过敏史</dt><dd>{patient.allergies ?? '未填写'}</dd></div><div><dt>绑定时间</dt><dd>{formatDateTime(patient.relationStartedAt)}</dd></div></dl></div>
     </section><section className="detail-grid lower"><div className="panel"><div className="panel-title"><div><h2>随访记录</h2><p>该患者的随访计划与状态</p></div></div>{followUps.length ? <div className="compact-list">{followUps.map((item) => <article key={item.id}><span className={`status-dot status-${item.status.toLowerCase()}`} /><div><b>{followUpTypes[item.type ?? ''] ?? item.type ?? '常规随访'}</b><small>{item.summary ?? '暂无说明'}</small></div><time>{formatDateTime(item.scheduledAt)}</time><i className={`status status-${item.status.toLowerCase()}`}>{followUpStatusLabel(item.status)}</i></article>)}</div> : <EmptyState title="暂无随访" detail="可为该患者创建新的随访计划。" />}</div>
@@ -316,6 +319,21 @@ function CareSummaryModal({ patient, onClose, onPublished }: { patient: Patient;
 }
 
 export default function App() {
+  const [hash, setHash] = useState(() => window.location.hash);
+  useEffect(() => {
+    const changed = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', changed);
+    return () => window.removeEventListener('hashchange', changed);
+  }, []);
+  if (/^#\/daily-check-in(?:\/|$)/.test(hash)) {
+    let token = '';
+    try { token = decodeURIComponent(hash.slice('#/daily-check-in/'.length)); } catch { /* Show invalid-link state. */ }
+    return <PublicDailyCheckIn key={hash} token={token} />;
+  }
+  return <AuthenticatedApp />;
+}
+
+function AuthenticatedApp() {
   const [user, setUser] = useState<Practitioner | null>(() => readStoredUser()); const [view, setView] = useState<ViewName>('managed-care'); const [data, setData] = useState<AppData>(emptyData);
   const [selectedPatientId, setSelectedPatientId] = useState(''); const [selectedPeerId, setSelectedPeerId] = useState(''); const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const [toast, setToast] = useState('');
   const [sessionNotice, setSessionNotice] = useState('');
@@ -368,7 +386,7 @@ export default function App() {
         {view === 'yuanqizhan-activities' && user.role === 'HEALTH_MANAGER' && <YuanqizhanActivity user={user} />}
         {view === 'dashboard' && <DashboardView data={data} selectedPatient={selectedPatient} onSelectPatient={(patient) => setSelectedPatientId(patient.id)} onOpenPatient={openPatient} onCreateFollowUp={(patient) => setFollowUpModal({ open: true, patient })} onMessage={openMessage} onOpenFollowUps={() => navigate('follow-ups')} />}
         {view === 'patients' && <PatientsView patients={data.patients} total={data.patientTotal} onOpen={openPatient} onCreatePatient={() => setCreatePatientOpen(true)} onCreateFollowUp={(patient) => setFollowUpModal({ open: true, patient })} />}
-        {view === 'patient-detail' && selectedPatientId && <PatientDetailView patientId={selectedPatientId} practitionerId={user.id} onBack={() => navigate('patients')} onCreateFollowUp={(patient) => setFollowUpModal({ open: true, patient })} onMessage={openMessage} onOpenArchive={openArchive} onTaskCreated={() => showToast('任务已成功下发')} />}
+        {view === 'patient-detail' && selectedPatientId && <PatientDetailView patientId={selectedPatientId} practitionerId={user.id} practitionerRole={user.role} onBack={() => navigate('patients')} onCreateFollowUp={(patient) => setFollowUpModal({ open: true, patient })} onMessage={openMessage} onOpenArchive={openArchive} onTaskCreated={() => showToast('任务已成功下发')} />}
         {view === 'patient-archive' && archivePatient && <ArchiveView patient={archivePatient} onBack={() => navigate('patient-detail')} onDirtyChange={setArchiveDirty} onSaved={(saved: PatientArchive) => { const patch = { archiveStatus: saved.status, archiveCompletionPercent: saved.completionPercent, archiveUpdatedAt: saved.updatedAt ?? null }; setArchivePatient((current) => current ? { ...current, ...patch } : current); setData((current) => ({ ...current, patients: current.patients.map((patient) => patient.id === saved.patientId ? { ...patient, ...patch } : patient) })); showToast(saved.status === 'COMPLETED' ? '患者档案已完成' : '档案草稿已保存'); }} />}
         {view === 'follow-ups' && <FollowUpsView followUps={data.followUps} patients={data.patients} onCreate={() => setFollowUpModal({ open: true })} onUpdated={(updated) => { setData((current) => ({ ...current, followUps: current.followUps.map((item) => item.id === updated.id ? updated : item) })); showToast('随访状态已更新'); }} />}
         {view === 'messages' && <MessagesView practitionerId={user.id} conversations={data.conversations} selectedPeerId={selectedPeerId} onSelectedPeer={setSelectedPeerId} onConversationRead={(peerId) => setData((current) => ({ ...current, conversations: current.conversations.map((item) => item.peerId === peerId ? { ...item, unreadCount: 0 } : item) }))} onConversationUpdated={(peerId, message, timestamp) => setData((current) => ({ ...current, conversations: current.conversations.map((item) => item.peerId === peerId ? { ...item, lastMessage: message, lastMessageAt: timestamp } : item) }))} />}
