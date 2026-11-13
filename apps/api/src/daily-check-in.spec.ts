@@ -126,11 +126,11 @@ describe('daily check-in capability and persistence', () => {
     const h = harness();
     h.setAssigned(false);
     await expect(h.link()).rejects.toBeInstanceOf(ForbiddenException);
-    expect((await h.service.records({} as any, h.patient.id)).canManageLink).toBe(false);
+    expect(await h.service.records({} as any, h.patient.id)).toMatchObject({ canViewLink: false, canManageLink: false });
     h.setAssigned(true); h.setEnrolled(false);
     expect((await h.link()).revoked).toBe(false);
     h.setRole('DOCTOR');
-    expect((await h.service.records({} as any, h.patient.id)).canManageLink).toBe(true);
+    expect(await h.service.records({} as any, h.patient.id)).toMatchObject({ canViewLink: true, canManageLink: true });
     h.setAssigned(false);
     await expect(h.service.records({} as any, h.patient.id)).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -144,12 +144,48 @@ describe('daily check-in capability and persistence', () => {
       await expect(h.service.records({} as any, h.patient.id)).rejects.toBeInstanceOf(ForbiddenException);
     }
     h.setRole('NUTRITIONIST');
-    await expect(h.link()).rejects.toBeInstanceOf(ForbiddenException);
+    expect((await h.link()).url).toContain(token);
     const view = await h.service.records({} as any, h.patient.id);
+    expect(view.canViewLink).toBe(true);
     expect(view.canManageLink).toBe(false);
     expect(view.items[0].answers).toEqual({ appetite: 0, bowel_ease: 'SMOOTH' });
     expect(view.items[0]).toHaveProperty('redactedAnswerKeys', ['bowel_extra']);
     expect(JSON.stringify(view)).not.toMatch(/真实姓名|13912345678/);
+  });
+
+  it('lets an assigned nutritionist obtain the stable link and QR on first use without reset or revoke rights', async () => {
+    const h = harness(); h.setRole('NUTRITIONIST');
+    const first = await h.link();
+    expect(first.revoked).toBe(false); expect(first.qrDataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(await h.link()).toEqual(first); expect(h.state().links).toHaveLength(1);
+    const before = structuredClone(h.state().links[0]);
+    await expect(h.service.link({} as any, h.patient.id, true)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(h.service.revoke({} as any, h.patient.id)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(h.state().links[0]).toEqual(before);
+    h.setRole('HEALTH_MANAGER'); expect(await h.link()).toEqual(first);
+  });
+
+  it('does not let a nutritionist revive a revoked link through the sharing entry', async () => {
+    const h = harness(); await h.link(); await h.service.revoke({} as any, h.patient.id);
+    const before = structuredClone(h.state().links[0]);
+    h.setRole('NUTRITIONIST');
+    expect(await h.link()).toEqual({ url: '', qrDataUrl: '', revoked: true });
+    await expect(h.service.link({} as any, h.patient.id, true)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(h.state().links[0]).toEqual(before);
+  });
+
+  it('requires both current enrollment assignment and an active relation for nutritionist sharing', async () => {
+    const inactive = harness(); inactive.setRole('NUTRITIONIST');
+    inactive.tx.careRelation.findFirst.mockResolvedValue(null);
+    await expect(inactive.link()).rejects.toBeInstanceOf(ForbiddenException);
+    expect(inactive.state().links).toHaveLength(0);
+    const reassigned = harness(); reassigned.setRole('NUTRITIONIST');
+    reassigned.tx.careEnrollment.findUnique.mockResolvedValue({ healthManagerId: 'staff', doctorId: 'staff', nutritionistId: 'other', clientCode: 'C-001' });
+    await expect(reassigned.link()).rejects.toBeInstanceOf(ForbiddenException);
+    expect(reassigned.state().links).toHaveLength(0);
+    const legacy = harness(); legacy.setRole('NUTRITIONIST'); legacy.setEnrolled(false);
+    expect((await legacy.link()).revoked).toBe(false);
+    expect(await legacy.service.records({} as any, legacy.patient.id)).toMatchObject({ canViewLink: true, canManageLink: false });
   });
 
   it('rejects past/future dates and rolls back a write crossing Shanghai midnight', async () => {

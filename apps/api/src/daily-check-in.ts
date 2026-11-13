@@ -79,17 +79,18 @@ export class DailyCheckInService {
     return patient;
   }
 
-  private async authorize(database: Database, actor: Actor, patientId: string, manage = false) {
+  private async authorize(database: Database, actor: Actor, patientId: string, action: 'records' | 'share' | 'manage' = 'records') {
     if (!['HEALTH_MANAGER', 'DOCTOR', 'NUTRITIONIST'].includes(actor.role)) throw new ForbiddenException('当前岗位无权访问每日填报');
-    if (manage && actor.role === 'NUTRITIONIST') throw new ForbiddenException('当前岗位不能管理客户填报链接');
+    if (action === 'manage' && actor.role === 'NUTRITIONIST') throw new ForbiddenException('当前岗位不能重置或停用客户填报链接');
     const patient = await this.patient(database, patientId);
     const enrollment = await database.careEnrollment.findUnique({ where: { patientId }, select: { healthManagerId: true, doctorId: true, nutritionistId: true, clientCode: true } });
     const relation = await database.careRelation.findFirst({ where: { patientId, practitionerId: actor.sub, status: 'ACTIVE' }, select: { id: true } });
     const field = actor.role === 'HEALTH_MANAGER' ? 'healthManagerId' : actor.role === 'DOCTOR' ? 'doctorId' : 'nutritionistId';
     const assigned = !!relation && (!enrollment || enrollment[field] === actor.sub);
+    const canViewLink = assigned;
     const canManageLink = assigned && actor.role !== 'NUTRITIONIST';
-    if ((manage && !canManageLink) || (actor.role !== 'HEALTH_MANAGER' && !assigned)) throw new ForbiddenException('该客户未分配给您或服务关系已结束');
-    return { patient, canManageLink };
+    if ((action === 'share' && !canViewLink) || (action === 'manage' && !canManageLink) || (actor.role !== 'HEALTH_MANAGER' && !assigned)) throw new ForbiddenException('该客户未分配给您或服务关系已结束');
+    return { patient, canViewLink, canManageLink };
   }
 
   private async lockPatient(database: Database, patientId: string) {
@@ -108,7 +109,7 @@ export class DailyCheckInService {
     this.appUrl();
     const row = await this.prisma.$transaction(async (tx) => {
       await this.lockPatient(tx, patientId);
-      await this.authorize(tx, actor, patientId, true);
+      await this.authorize(tx, actor, patientId, reset ? 'manage' : 'share');
       const prior = await tx.dailyCheckInLink.findUnique({ where: { patientId } });
       if (prior && !reset) {
         // Recompute after signing-key rotation so reissued staff links stay usable.
@@ -129,7 +130,7 @@ export class DailyCheckInService {
     const actor = await this.clinical.actor(req);
     await this.prisma.$transaction(async (tx) => {
       await this.lockPatient(tx, patientId);
-      await this.authorize(tx, actor, patientId, true);
+      await this.authorize(tx, actor, patientId, 'manage');
       const row = await tx.dailyCheckInLink.findUnique({ where: { patientId } });
       if (row && !row.revokedAt) {
         await tx.dailyCheckInLink.update({ where: { patientId }, data: { revokedAt: new Date() } });
@@ -199,7 +200,7 @@ export class DailyCheckInService {
 
   async records(req: Request, patientId: string, requestedPage?: string) {
     const actor = await this.clinical.actor(req);
-    const { patient, canManageLink } = await this.authorize(this.prisma, actor, patientId);
+    const { patient, canViewLink, canManageLink } = await this.authorize(this.prisma, actor, patientId);
     const page = requestedPage === undefined ? 1 : Number(requestedPage);
     if (!Number.isInteger(page) || page < 1 || page > 100000) throw new BadRequestException('页码无效');
     const pageSize = 30;
@@ -217,7 +218,7 @@ export class DailyCheckInService {
       return result;
     });
     await this.prisma.auditLog.create({ data: { actorId: actor.sub, action: 'DAILY_CHECK_IN_RECORDS_READ', resourceType: 'PATIENT', resourceId: patient.id } });
-    return { items, total, page, pageSize, hasMore: page * pageSize < total, canManageLink };
+    return { items, total, page, pageSize, hasMore: page * pageSize < total, canViewLink, canManageLink };
   }
 }
 

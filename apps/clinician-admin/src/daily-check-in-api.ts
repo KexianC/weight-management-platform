@@ -14,7 +14,7 @@ export type DailyCheckInAnswers = {
 export type DailyCheckInRecord = { date: string; version: number; weightKg: number; answers: DailyCheckInAnswers; updatedAt: string; redactedAnswerKeys?: (keyof DailyCheckInAnswers)[] };
 export type DailyCheckInContext = { date: string; clientLabel: string; record: DailyCheckInRecord | null };
 export type DailyCheckInLink = { url: string; qrDataUrl: string; revoked: boolean };
-export type DailyCheckInRecordPage = { items: DailyCheckInRecord[]; total: number; page: number; pageSize: number; hasMore: boolean; canManageLink?: boolean };
+export type DailyCheckInRecordPage = { items: DailyCheckInRecord[]; total: number; page: number; pageSize: number; hasMore: boolean; canViewLink?: boolean; canManageLink?: boolean };
 export type DailyCheckInQuestion = { key: keyof DailyCheckInAnswers; label: string; options?: ReadonlyArray<{ value: number | string; label: string }> };
 
 export const bowelEaseOptions = [

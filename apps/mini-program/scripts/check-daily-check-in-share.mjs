@@ -37,9 +37,11 @@ for (const malformedToken of ['synthetic_token', signedToken.slice(1), signedTok
   await assert.rejects(h5.getDailyCheckInLink('synthetic-patient'), /地址/)
 }
 response = valid
-const count = requests.length
 actor = { userId: 'synthetic-nutritionist', backendRole: 'NUTRITIONIST' }
-await assert.rejects(h5.getDailyCheckInLink('synthetic-patient'), /健管师或医生/)
+assert.equal((await h5.getDailyCheckInLink('synthetic-patient')).url, valid.url)
+const count = requests.length
+actor = { userId: 'synthetic-coach', backendRole: 'EXERCISE_COACH' }
+await assert.rejects(h5.getDailyCheckInLink('synthetic-patient'), /健管师、医生或营养师/)
 assert.equal(requests.length, count)
 actor = { userId: 'synthetic-doctor', backendRole: 'DOCTOR' }
 await assert.rejects(h5.getDailyCheckInLink('../other'), /标识/)
@@ -50,10 +52,15 @@ await assert.rejects(h5.getDailyCheckInLink('synthetic-patient'), /地址/)
 response = async () => { actor = { userId: 'synthetic-other-doctor', backendRole: 'DOCTOR' }; return valid }
 await assert.rejects(h5.getDailyCheckInLink('synthetic-patient'), /账号已切换/)
 actor = { userId: 'synthetic-doctor', backendRole: 'DOCTOR' }
-response = { items: Array.from({ length: 8 }, (_, i) => ({ date: `2026-11-${12-i}`, weightKg: 70, answers: { private: true } })) }
+response = { items: Array.from({ length: 8 }, (_, i) => ({ date: `2026-11-${12-i}`, weightKg: 70, answers: { private: true } })), canViewLink: true, canManageLink: false }
 const recent = await h5.getDailyCheckInRecords('synthetic-patient')
-assert.equal(recent.length, 5)
-assert.ok(recent.every(record => !('answers' in record)))
+assert.equal(recent.items.length, 5)
+assert.equal(recent.canViewLink, true)
+assert.ok(recent.items.every(record => !('answers' in record)))
+for (const [capabilities, expected] of [[{ canManageLink: true }, true], [{ canViewLink: false, canManageLink: true }, false], [{}, false]]) {
+  response = { items: [], ...capabilities }
+  assert.equal((await h5.getDailyCheckInRecords('synthetic-patient')).canViewLink, expected)
+}
 assert.equal((await h5.dailyCheckInQrAsset(valid.qrDataUrl)).path, valid.qrDataUrl)
 await assert.rejects(h5.dailyCheckInQrAsset('data:image/svg+xml;base64,aGVsbG8='), /二维码/)
 const asset = await native.dailyCheckInQrAsset(valid.qrDataUrl)
@@ -87,9 +94,25 @@ normal.suspend()
 assert.equal(normal.link, '')
 assert.ok(released.includes('synthetic-qr'))
 
+actor = { userId: 'synthetic-nutritionist', backendRole: 'NUTRITIONIST' }
+const nutritionist = view(); await nutritionist.load()
+assert.equal(nutritionist.link, valid.url)
+nutritionist.copyLink(); assert.deepEqual(copies, [valid.url, valid.url])
+let attemptedLinks = 0
+linkLoader = async () => { attemptedLinks++; return valid }
+recordsLoader = async () => ({ items: recent.items, canViewLink: false })
+const readOnly = view(); await readOnly.load()
+assert.equal(attemptedLinks, 0)
+assert.equal(readOnly.link, '')
+assert.equal(readOnly.records.length, 5)
+assert.match(readOnly.error, /仅可查看/)
+recordsLoader = async () => recent
+actor = { userId: 'synthetic-doctor', backendRole: 'DOCTOR' }
+
 let releaseLink
 linkLoader = () => new Promise(resolve => { releaseLink = resolve })
 const pending = view(), loading = pending.load()
+await Promise.resolve(); await Promise.resolve()
 pending.patientId = 'synthetic-other-patient'; pending.suspend()
 releaseLink(valid); await loading
 assert.equal(pending.link, '')
@@ -99,7 +122,7 @@ linkLoader = async () => valid
 let releaseQr
 qrLoader = () => new Promise(resolve => { releaseQr = resolve })
 const hidden = view(), pendingQr = hidden.load()
-await Promise.resolve(); await Promise.resolve()
+for (let i = 0; i < 5; i++) await Promise.resolve()
 hidden.pageActive = false; hidden.suspend()
 releaseQr({ path: 'synthetic-stale-qr', ownedTemp: true }); await pendingQr
 assert.ok(released.includes('synthetic-stale-qr'))
@@ -111,7 +134,7 @@ assert.equal(qrFailure.link, valid.url)
 assert.equal(qrFailure.qrError, '二维码失败')
 actor = { userId: 'synthetic-other-doctor', backendRole: 'DOCTOR' }
 qrFailure.copyLink()
-assert.equal(copies.length, 1)
+assert.equal(copies.length, 2)
 assert.equal(qrFailure.link, '')
 
 actor = { userId: 'synthetic-doctor', backendRole: 'DOCTOR' }
@@ -120,11 +143,11 @@ const revoked = view(); await revoked.load()
 assert.equal(revoked.link, '')
 assert.match(revoked.error, /权限已变化/)
 
-for (const relative of ['src/components/DailyCheckInShare.vue', 'src/pages/health-manager/client.vue', 'src/pages/doctor/patient-detail.vue']) {
+for (const relative of ['src/components/DailyCheckInShare.vue', 'src/pages/health-manager/client.vue', 'src/pages/doctor/patient-detail.vue', 'src/pages/doctor/NutritionistClient.vue']) {
   const filename = resolve(root, relative)
   const { descriptor, errors } = parse(readFileSync(filename, 'utf8'), { filename })
   assert.deepEqual(errors, [])
   compileScript(descriptor, { id: relative })
   assert.deepEqual(compileTemplate({ source: descriptor.template.content, filename, id: relative }).errors, [])
 }
-console.log('PASS daily check-in sharing: role boundary, session/client/hide races, revoked links, native QR lifecycle, copying and SFC compilation')
+console.log('PASS daily check-in sharing: assigned nutritionist view capability, legacy capability fallback, denied role/read-only token suppression, session/client/hide races, revoked links, native QR lifecycle, copying and SFC compilation')

@@ -80,7 +80,7 @@ let resolveFile = async () => 'blob:fictional'
 globalThis.__componentTest = { ...service, resolveMediaFile: (id) => resolveFile(id), releaseMediaFile: (path) => releasedPaths.push(path) }
 const componentSource = readFileSync(resolve(here, 'NutritionistClient.vue'), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1]
 const bindings = [...componentSource.matchAll(/^import\s*\{([^}]+)\}[^\n]*$/gm)].map((item) => item[1]).join(',')
-const componentCode = `const YuanqizhanClientRecords = {}; const {${bindings}} = globalThis.__componentTest;\n` + componentSource.replace(/^import .*\n/gm, '')
+const componentCode = `const YuanqizhanClientRecords = {}, DailyCheckInShare = {}; const {${bindings}} = globalThis.__componentTest;\n` + componentSource.replace(/^import .*\n/gm, '')
 const component = (await import(`data:text/javascript;base64,${Buffer.from(componentCode).toString('base64')}`)).default
 function makeView() {
   actor = { userId: 'fictional-nutritionist-1', backendRole: 'NUTRITIONIST' }
