@@ -23,6 +23,7 @@ import { ClinicalService } from './clinical';
 import { assertFollowUpTransition, type FollowState } from './domain';
 import { businessProjection } from './business-projection';
 import { PrismaService } from './prisma.service';
+import { DailyRoutineService, routineDate } from './daily-routine';
 
 const followTypes = ['WEIGHT', 'DIET', 'EXERCISE', 'MEDICATION', 'QUESTIONNAIRE', 'GENERAL', 'OFFLINE', 'PHONE'] as const;
 const priorities = ['LOW', 'NORMAL', 'HIGH', 'URGENT'] as const;
@@ -147,7 +148,7 @@ export function recurrenceDates(base: Date, rule?: Record<string, unknown>) {
 
 @Injectable()
 export class FollowUpsService {
-  constructor(private readonly prisma: PrismaService, private readonly clinical: ClinicalService) {}
+  constructor(private readonly prisma: PrismaService, private readonly clinical: ClinicalService, private readonly routine?: DailyRoutineService) {}
 
   private async rowForActor(req: Request, id: string, readOnly = false) {
     const actor = await this.clinical.actor(req);
@@ -316,6 +317,7 @@ export class FollowUpsService {
     if (next === 'CANCELLED' && actor.role === 'PATIENT') throw new ForbiddenException('患者不能取消医护安排的随访');
     assertFollowUpTransition(row.status as FollowState, next, actor.role);
     return this.prisma.$transaction(async (tx) => {
+      if (this.routine && next === 'COMPLETED' && row.type === 'WEIGHT') await this.routine.lock(tx, row.patientId);
       const claimed = await tx.followUp.updateMany({
         where: { id, status: row.status },
         data: {
@@ -349,17 +351,20 @@ export class FollowUpsService {
         const rawWeight = dto.result?.weightKg ?? dto.result?.weight ?? (dto.result?.weightData as Record<string, unknown> | undefined)?.weightKg;
         const weightKg = Number(rawWeight);
         if (Number.isFinite(weightKg) && weightKg >= 20 && weightKg <= 400) {
+          const measuredAt = new Date();
+          if (this.routine) await this.routine.ensure(tx, row.patientId, routineDate(measuredAt));
           await tx.healthRecord.create({
             data: {
               patientId: row.patientId,
               recordType: 'WEIGHT',
               weightKg,
-              measuredAt: new Date(),
+              measuredAt,
               source: 'FOLLOW_UP',
               payload: asJson({ followUpId: row.id }),
               note: dto.summary ? notificationText(dto.summary, '') : undefined,
             },
           });
+          if (this.routine) await this.routine.changed(tx, row.patientId, routineDate(measuredAt), ['weight']);
         }
       }
       const notifyUserId = actor.role === 'PATIENT' ? row.practitionerId : row.patientId;

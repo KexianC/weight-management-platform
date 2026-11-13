@@ -241,6 +241,8 @@
 	import { getHealthRecords, getHealthReports, getUnreadMessageCount, setTargetWeight, getNotifications, getUnreadNotificationCount, markNotificationAsRead, getPatientDoctors, deleteNotification } from '../../utils/api.js'
 	import { showToast } from '../../utils/common.js'
 	import { getCustomNavigationLayout } from '../../utils/navigation.js'
+	import { getRoutineToday } from '../../utils/daily-routine-api.js'
+	import { routineView } from '../../utils/daily-routine-model.js'
 	import { getMyActivities, patientActivitySession } from '../../utils/yuanqizhan.js'
 	import { statusLabel } from '../../utils/yuanqizhan-model.js'
 	
@@ -730,6 +732,7 @@
             return Number(record.weightKg ?? record.weight) > 0 && Number.isFinite(measuredAt) && new Date(measuredAt + 8 * 60 * 60 * 1000).toISOString().slice(0, 10) === today
           }))
           this.mealCounts = reportResult.data?.diet?.today?.mealCounts || null
+          try { const daily = await getRoutineToday(); if (epoch !== this.healthDataEpoch) return; const view = routineView(daily); this.todayWeightRecorded = view.weightKg != null; if (view.weightKg != null) this.currentWeight = view.weightKg; if (view.recordCounts) this.mealCounts = Object.fromEntries(['breakfast','lunch','dinner','snack'].map(key => [key.toUpperCase(), Number(view.recordCounts[key] || 0)])) } catch {} 
           // 单独获取未读消息数（非阻塞）
 					this.loadUnreadCount()
 					

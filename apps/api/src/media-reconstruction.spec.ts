@@ -58,7 +58,7 @@ describe('private reconstruction media', () => {
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ ...baseAsset, ...data })),
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
-      healthRecord: { findUnique: jest.fn(async () => ({ patientId: 'patient-test', recordType: 'DIET' })) },
+      healthRecord: { findUnique: jest.fn(async () => ({ patientId: 'patient-test', recordType: 'DIET', imageUrls: ['asset-test'] })) },
       careEnrollment: { findUnique: jest.fn(async () => null) },
       careRelation: { findFirst: jest.fn(async () => ({ id: 'assigned-test' })) },
       followUp: { findUnique: jest.fn(async () => ({ patientId: 'patient-test', practitionerId: 'staff-test' })) },
@@ -145,13 +145,23 @@ describe('private reconstruction media', () => {
     asset.healthRecordId = 'diet-test';
     await expect(service.signedUrl(request, asset.id)).resolves.toEqual(expect.objectContaining({ requiresAuthorization: true }));
     expect(prisma.healthRecord.findUnique).toHaveBeenCalledWith({
-      where: { id: 'diet-test' }, select: { patientId: true, recordType: true },
+      where: { id: 'diet-test' }, select: { patientId: true, recordType: true, imageUrls: true },
     });
     expect(prisma.careRelation.findFirst).toHaveBeenCalledWith({
       where: { patientId: 'patient-test', practitionerId: 'staff-test', status: 'ACTIVE' }, select: { id: true },
     });
     prisma.careRelation.findFirst.mockResolvedValue(null);
     await expect(service.signedUrl(request, asset.id)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects a previously signed DIET image after it is removed from the bound record', async () => {
+    asset.referenceType = 'HEALTH_RECORD';
+    asset.referenceId = 'diet-test';
+    asset.healthRecordId = 'diet-test';
+    const [expires, sig] = queryFor((await service.signedUrl(request, asset.id)).url);
+    prisma.healthRecord.findUnique.mockResolvedValue({ patientId: 'patient-test', recordType: 'DIET', imageUrls: [] });
+    await expect(service.signedUrl(request, asset.id)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.localFile(request, asset.id, expires, sig)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('requires the current managed nutrition assignment as well as an ACTIVE clinical relation', async () => {

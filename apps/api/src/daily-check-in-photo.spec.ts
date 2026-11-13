@@ -71,9 +71,9 @@ describe('daily lifestyle and meal photo isolation', () => {
     await h.submit(token, {}, 1); expect(h.state().health[0].waistCm).toBeNull();
   });
   it.each([
-    { waist_cm: 29.9 }, { waist_cm: 300.1 }, { waist_cm: 80.12 }, { exercise_minutes: -1 }, { exercise_minutes: 1.5 },
+    { waist_cm: 19.9 }, { waist_cm: 300.1 }, { waist_cm: 80.123 }, { exercise_minutes: -1 }, { exercise_minutes: 1.5 },
     { exercise_minutes: 1441 }, { water_ml: 20001 }, { water_ml: 1.1 }, { sleep_start: '24:00' }, { sleep_end: '9:01' },
-    { breakfast_text: 'x'.repeat(501) }, { lunch_photo_ids: ['a', 'b', 'c', 'd'] }, { dinner_photo_ids: ['a', 'a'] },
+    { breakfast_text: 'x'.repeat(501) }, { lunch_photo_ids: Array.from({ length: 10 }, (_, i) => 'p' + i) }, { dinner_photo_ids: ['a', 'a'] },
     { breakfast_photo_ids: ['../other'] }, { sleep_duration: 20 },
   ])('rejects invalid lifestyle input %j', answers => { expect(() => validateCheckInAnswers(answers)).toThrow(BadRequestException); });
 
@@ -180,7 +180,9 @@ describe('daily lifestyle and meal photo isolation', () => {
     const p = await h.service.uploadPhoto(token, { date: '2026-11-13', meal: 'breakfast' }, file());
     await h.submit(token, { breakfast_photo_ids: [p.id] });
     const asset = h.state().photos[0];
-    for (const role of ['PATIENT', 'ADMIN', 'EXERCISE_COACH']) expect(await canReadDailyCheckInPhoto(h.db, { sub: h.patient.id, role } as any, asset)).toBe(false);
+    for (const role of ['ADMIN', 'EXERCISE_COACH']) expect(await canReadDailyCheckInPhoto(h.db, { sub: h.patient.id, role } as any, asset)).toBe(false);
+    expect(await canReadDailyCheckInPhoto(h.db, { sub: h.patient.id, role: 'PATIENT' } as any, asset)).toBe(true);
+    expect(await canReadDailyCheckInPhoto(h.db, { sub: 'other-patient', role: 'PATIENT' } as any, asset)).toBe(false);
     await expect(h.media.readOwnedImageForOcr({ sub: h.patient.id, role: 'PATIENT' } as any, p.id)).rejects.toBeInstanceOf(ForbiddenException);
     h.db.careEnrollment.findUnique.mockResolvedValue({ doctorId: 'other', nutritionistId: 'other' });
     expect(await canReadDailyCheckInPhoto(h.db, { sub: 'staff', role: 'NUTRITIONIST' } as any, asset)).toBe(false);

@@ -12,9 +12,11 @@ import { PrismaService } from './prisma.service';
 import { MediaService, UploadFile } from './media';
 import { DAILY_MEALS, DAILY_PHOTO_DAILY_LIMIT, DAILY_PHOTO_MAX_BYTES, DAILY_PHOTO_TYPE, DailyMeal, mealPhotoIds } from './daily-check-in-photo-policy';
 import { assertDailyCheckInImageIntegrity, dailyImageMime } from './daily-check-in-image';
+import { DailyRoutineService, ROUTINE_SOURCE, ROUTINE_TYPES, routineDate, routineWindow } from './daily-routine';
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/;
 const SOURCE = 'DAILY_CHECK_IN';
+const ANSWER_FIELDS = ['fatigue', 'hunger', 'appetite', 'sleep_quality', 'energy_complexion', 'bowel_count', 'stool_type', 'bowel_ease', 'bowel_extra', 'waist_cm', 'exercise_minutes', 'water_ml', 'sleep_hours', 'sleep_start', 'sleep_end', ...['breakfast', 'lunch', 'dinner'].flatMap(meal => [`${meal}_text`, `${meal}_photo_ids`])];
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 export const checkInDate = (now = new Date()) => new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
 const invalidLink = () => new NotFoundException('填报链接无效或已停用，请联系服务人员获取新链接');
@@ -31,12 +33,27 @@ export class DailyCheckInSubmitDto extends DailyCheckInTokenDto {
   @IsInt() @Min(0) @Max(1000000) version!: number;
   @IsNumber({ maxDecimalPlaces: 2 }) @Min(20) @Max(400) weightKg!: number;
   @IsOptional() @IsObject() answers?: Record<string, unknown>;
+  @IsOptional() @IsString() @Matches(/^[a-f0-9]{64}$/) revision?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(32) @ArrayUnique() @IsString({ each: true }) changedFields?: string[];
+}
+
+export class PatientDailyCheckInDto {
+  @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) date!: string;
+  @IsString() @Matches(/^[a-f0-9]{64}$/) revision!: string;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(20) @Max(400) weightKg?: number;
+  @IsOptional() @IsObject() answers?: Record<string, unknown>;
+  @IsArray() @ArrayMaxSize(32) @ArrayUnique() @IsString({ each: true }) changedFields!: string[];
 }
 
 export class DailyCheckInPhotoRefreshDto extends DailyCheckInTokenDto {
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) date!: string;
-  @IsArray() @ArrayMaxSize(9) @ArrayUnique() @IsString({ each: true })
-  @Matches(/^[A-Za-z0-9_-]{1,64}$/, { each: true }) photoIds!: string[];
+  @IsArray() @ArrayMaxSize(27) @ArrayUnique() @IsString({ each: true })
+  @Matches(/^[A-Za-z0-9_-]{1,191}$/, { each: true }) photoIds!: string[];
+}
+
+export class PatientDailyPhotoRefreshDto {
+  @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) date!: string;
+  @IsArray() @ArrayMaxSize(27) @ArrayUnique() @IsString({ each: true }) @Matches(/^[A-Za-z0-9_-]{1,191}$/, { each: true }) photoIds!: string[];
 }
 
 /** All answers are optional; explicit zero is preserved and unfamiliar fields fail closed. */
@@ -54,8 +71,11 @@ export function validateCheckInAnswers(raw: unknown): Answers {
       const [min, max] = ranges[key];
       if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) throw new BadRequestException('选填数值或选项无效');
       result[key] = value;
+    } else if (key === 'sleep_hours') {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 24 || Math.abs(value * 100 - Math.round(value * 100)) > 1e-7) throw new BadRequestException('睡眠时长需为0至24小时，最多两位小数');
+      result[key] = value;
     } else if (key === 'waist_cm') {
-      if (typeof value !== 'number' || !Number.isFinite(value) || value < 30 || value > 300 || Math.abs(value * 10 - Math.round(value * 10)) > 1e-7) throw new BadRequestException('腰围需为30至300 cm，最多一位小数');
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 20 || value > 300 || Math.abs(value * 100 - Math.round(value * 100)) > 1e-7) throw new BadRequestException('腰围需为20至300 cm，最多两位小数');
       result[key] = value;
     } else if (key === 'sleep_start' || key === 'sleep_end') {
       if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new BadRequestException('睡眠时间需为有效的24小时制时分');
@@ -64,7 +84,7 @@ export function validateCheckInAnswers(raw: unknown): Answers {
       if (typeof value !== 'string' || value.length > 500) throw new BadRequestException('每餐文字最多填写500字');
       if (value.trim()) result[key] = value.trim();
     } else if (DAILY_MEALS.some(meal => key === `${meal}_photo_ids`)) {
-      if (!Array.isArray(value) || value.length > 3 || new Set(value).size !== value.length || value.some(id => typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id))) throw new BadRequestException('每餐最多选择3张有效照片');
+      if (!Array.isArray(value) || value.length > 9 || new Set(value).size !== value.length || value.some(id => typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,191}$/.test(id))) throw new BadRequestException('每餐最多选择9张有效照片');
       if (value.length) result[key] = value;
     } else if (key === 'bowel_ease') {
       if (typeof value !== 'string' || !['SMOOTH', 'STRAINED', 'DIFFICULT', 'BLOATING'].includes(value)) throw new BadRequestException('排便感受选项无效');
@@ -79,7 +99,7 @@ export function validateCheckInAnswers(raw: unknown): Answers {
 
 @Injectable()
 export class DailyCheckInService {
-  constructor(private readonly prisma: PrismaService, private readonly clinical: ClinicalService, private readonly media?: MediaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly clinical: ClinicalService, private readonly media?: MediaService, private readonly routine?: DailyRoutineService) {}
 
   private token(patientId: string, nonce: string) {
     const secret = process.env.JWT_ACCESS_SECRET;
@@ -182,6 +202,7 @@ export class DailyCheckInService {
   }
 
   async context(dto: DailyCheckInTokenDto) {
+    if (this.routine) return this.routineContext(dto);
     const link = await this.resolve(this.prisma, dto.token);
     return this.prisma.$transaction(async (tx) => {
       await this.lockPatient(tx, link.patientId);
@@ -193,6 +214,7 @@ export class DailyCheckInService {
   }
 
   async submit(dto: DailyCheckInSubmitDto) {
+    if (this.routine) return this.routineSubmit(dto);
     if (typeof dto.weightKg !== 'number' || !Number.isFinite(dto.weightKg) || dto.weightKg < 20 || dto.weightKg > 400 || Math.abs(dto.weightKg * 100 - Math.round(dto.weightKg * 100)) > 1e-7) throw new BadRequestException('请填写20至400 kg之间的体重，最多两位小数');
     if (!Number.isInteger(dto.version) || dto.version < 0 || dto.version > 1000000) throw new BadRequestException('填报版本无效，请重新打开页面');
     const answers = validateCheckInAnswers(dto.answers);
@@ -228,15 +250,100 @@ export class DailyCheckInService {
     }
   }
 
+  private async routineView(snapshot: Awaited<ReturnType<DailyRoutineService['read']>>, database: Database, patientId: string, link?: DailyCheckInLink, actor?: Actor) {
+    const assets = await this.selectedPhotos(database, patientId, snapshot.date, snapshot.answers);
+    const photos = await Promise.all(assets.map(asset => link ? this.publicPhotoView(asset, link) : this.media!.dailyCheckInPhotoView(actor!, asset.id, database)));
+    return { date: snapshot.date, version: snapshot.version, revision: snapshot.revision, weightKg: snapshot.weightKg, answers: snapshot.answers, photos, updatedAt: snapshot.updatedAt, recordCounts: snapshot.recordCounts, legacyMediaUnlinked: snapshot.legacyMediaUnlinked };
+  }
+
+  private async patientActor(req: Request) {
+    const actor = await this.clinical.actor(req);
+    if (actor.role !== 'PATIENT') throw new ForbiddenException('仅客户本人可操作日常记录');
+    await this.patient(this.prisma, actor.sub); return actor;
+  }
+
+  async routineContext(dto?: DailyCheckInTokenDto, req?: Request) {
+    const actor = req ? await this.patientActor(req) : undefined;
+    const firstLink = dto ? await this.resolve(this.prisma, dto.token) : undefined;
+    const patientId = actor?.sub ?? firstLink!.patientId;
+    return this.prisma.$transaction(async tx => {
+      await this.lockPatient(tx, patientId);
+      const link = dto ? await this.resolve(tx, dto.token) : undefined;
+      await this.patient(tx, patientId);
+      const date = checkInDate(), snapshot = await this.routine!.read(tx, patientId, date);
+      const view = snapshot.hasData ? await this.routineView(snapshot, tx, patientId, link, actor) : null;
+      return { date, clientLabel: `客户${hash(patientId).slice(0, 8).toUpperCase()}`, revision: snapshot.revision,
+        record: snapshot.weightKg !== null ? view : null, draft: snapshot.weightKg === null ? view : null };
+    });
+  }
+
+  async routineSubmit(dto: DailyCheckInSubmitDto | PatientDailyCheckInDto, req?: Request) {
+    const actor = req ? await this.patientActor(req) : undefined;
+    const publicDto = actor ? undefined : dto as DailyCheckInSubmitDto;
+    const firstLink = publicDto ? await this.resolve(this.prisma, publicDto.token) : undefined;
+    const patientId = actor?.sub ?? firstLink!.patientId;
+    const changedFields = dto.changedFields ?? ['weightKg', ...ANSWER_FIELDS];
+    if (!Array.isArray(changedFields) || changedFields.length > 32 || new Set(changedFields).size !== changedFields.length
+      || changedFields.some(field => !['weightKg', ...ANSWER_FIELDS].includes(field))) throw new BadRequestException('修改字段无效');
+    if (publicDto || changedFields.includes('weightKg')) {
+      if (typeof dto.weightKg !== 'number' || !Number.isFinite(dto.weightKg) || dto.weightKg < 20 || dto.weightKg > 400 || Math.abs(dto.weightKg * 100 - Math.round(dto.weightKg * 100)) > 1e-7) throw new BadRequestException('请填写20至400 kg之间的体重，最多两位小数');
+    }
+    const input = dto.answers ?? {};
+    if (Object.keys(input).some(field => !ANSWER_FIELDS.includes(field))) throw new BadRequestException('包含不支持的填报字段');
+    const answers = validateCheckInAnswers(Object.fromEntries(Object.entries(input).filter(([field]) => changedFields.includes(field))));
+    return this.prisma.$transaction(async tx => {
+      await this.lockPatient(tx, patientId);
+      const link = publicDto ? await this.resolve(tx, publicDto.token) : undefined;
+      await this.patient(tx, patientId);
+      if (dto.date !== checkInDate()) throw new ConflictException('填报日期已变化，请刷新页面填写今天的信息');
+      const before = await this.routine!.read(tx, patientId, dto.date);
+      const same = changedFields.every(field => field === 'weightKg' ? before.weightKg === dto.weightKg : JSON.stringify(before.answers[field]) === JSON.stringify(answers[field]));
+      const conflict = dto.revision !== undefined && dto.revision !== before.revision || publicDto && publicDto.version !== before.version;
+      if (conflict && !same) throw new ConflictException('今天的记录已在另一端更新，请重新加载后确认再保存');
+      if (same) return this.routineView(before, tx, patientId, link, actor);
+      const nextAnswers = { ...before.answers };
+      for (const field of changedFields) if (field !== 'weightKg') { if (answers[field] === undefined) delete nextAnswers[field]; else nextAnswers[field] = answers[field]; }
+      await this.selectedPhotos(tx, patientId, dto.date, nextAnswers);
+      const removed = mealPhotoIds(before.answers).filter(id => !mealPhotoIds(nextAnswers).includes(id));
+      const result = await this.routine!.apply(tx, patientId, dto.date, dto.weightKg, answers, changedFields);
+      if (removed.length) await tx.mediaAsset.updateMany({ where: { id: { in: removed }, ownerId: patientId, referenceType: DAILY_PHOTO_TYPE, status: 'READY' }, data: { status: 'DELETED', deletedAt: new Date() } });
+      await tx.auditLog.create({ data: { actorId: actor?.sub ?? null, action: 'DAILY_CHECK_IN_SUBMIT', resourceType: 'DAILY_ROUTINE', resourceId: result.meta!.id, metadata: { patientId, date: dto.date, version: result.version, access: actor ? 'PATIENT_SESSION' : 'CAPABILITY_LINK' } } });
+      if (dto.date !== checkInDate()) throw new ConflictException('填报日期已变化，请刷新页面');
+      return this.routineView(result, tx, patientId, link, actor);
+    });
+  }
+
+  async routineRecords(req: Request, patientId?: string, requestedPage?: string) {
+    const actor = patientId ? await this.clinical.actor(req) : await this.patientActor(req);
+    const ownerId = patientId ?? actor.sub;
+    const access = patientId ? await this.authorize(this.prisma, actor, ownerId) : { canViewLink: false, canManageLink: false };
+    const page = requestedPage === undefined ? 1 : Number(requestedPage), pageSize = 30;
+    if (!Number.isInteger(page) || page < 1 || page > 100000) throw new BadRequestException('页码无效');
+    const [rows, legacy] = await Promise.all([
+      this.prisma.healthRecord.findMany({ where: { patientId: ownerId, OR: [{ recordType: { in: [...ROUTINE_TYPES] } }, { source: ROUTINE_SOURCE }] }, select: { measuredAt: true } }),
+      this.prisma.dailyCheckInRecord.findMany({ where: { patientId: ownerId }, select: { date: true } }),
+    ]);
+    const days = [...new Set([...rows.map(row => routineDate(row.measuredAt)), ...legacy.map(row => row.date)])].sort().reverse();
+    const items = await Promise.all(days.slice((page - 1) * pageSize, page * pageSize).map(async date => {
+      const snapshot = await this.routine!.read(this.prisma, ownerId, date);
+      const result = await this.routineView(snapshot, this.prisma, ownerId, undefined, actor);
+      if (actor.role === 'NUTRITIONIST') { const { bowel_extra: _private, ...safe } = result.answers; return { ...result, answers: safe, redactedAnswerKeys: ['bowel_extra'] }; }
+      return result;
+    }));
+    return { items, total: days.length, page, pageSize, hasMore: page * pageSize < days.length, canViewLink: access.canViewLink, canManageLink: access.canManageLink };
+  }
+
   private async selectedPhotos(database: Database, patientId: string, date: string, answers: Answers): Promise<MediaAsset[]> {
     const ids = mealPhotoIds(answers);
     if (!ids.length) return [];
     if (new Set(ids).size !== ids.length) throw new BadRequestException('同一照片不能重复用于不同餐次');
-    const assets = await database.mediaAsset.findMany({ where: { id: { in: ids }, ownerId: patientId, referenceType: DAILY_PHOTO_TYPE, status: 'READY', deletedAt: null } });
+    const assets = await database.mediaAsset.findMany({ where: { id: { in: ids }, ownerId: patientId, referenceType: { in: [DAILY_PHOTO_TYPE, 'HEALTH_RECORD'] }, status: 'READY', deletedAt: null } });
+    const snapshot = this.routine ? await this.routine.read(database, patientId, date) : null;
     return DAILY_MEALS.flatMap(meal => {
       const selected = answers[`${meal}_photo_ids`] as string[] | undefined;
       return (selected ?? []).map(id => {
-        const asset = assets.find(item => item.id === id && item.referenceId === `${date}:${meal}`);
+        const asset = assets.find(item => item.id === id && (item.referenceType === DAILY_PHOTO_TYPE && item.referenceId === `${date}:${meal}` && (!item.healthRecordId || item.healthRecordId === snapshot?.refs[meal]?.id)
+          || snapshot?.refs[meal] && item.referenceType === 'HEALTH_RECORD' && item.healthRecordId === snapshot.refs[meal].id && item.referenceId === snapshot.refs[meal].id && Array.isArray(snapshot.refs[meal].imageUrls) && snapshot.refs[meal].imageUrls.includes(id)));
         if (!asset) throw new BadRequestException('餐食照片已失效或不属于当前客户、日期和餐次，请重新选择');
         return asset;
       });
@@ -262,13 +369,14 @@ export class DailyCheckInService {
   }
 
   /** Runs as a guard before Multer allocates an upload buffer. Rechecked under the patient lock. */
-  async authorizePhotoUpload(token: string) {
-    const link = await this.resolve(this.prisma, token);
+  async authorizePhotoUpload(token: string, req?: Request) {
+    const link = req ? { patientId: (await this.patientActor(req)).sub } : await this.resolve(this.prisma, token);
     await this.checkPhotoQuota(this.prisma, link.patientId, checkInDate());
   }
 
-  async uploadPhoto(token: string, fields: Record<string, unknown>, file: UploadFile | undefined) {
-    const link = await this.resolve(this.prisma, token);
+  async uploadPhoto(token: string, fields: Record<string, unknown>, file: UploadFile | undefined, req?: Request) {
+    const actor = req ? await this.patientActor(req) : undefined;
+    const link = actor ? { patientId: actor.sub } : await this.resolve(this.prisma, token);
     const date = fields.date;
     const meal = fields.meal;
     if (Object.keys(fields).some(key => !['date', 'meal'].includes(key)) || typeof date !== 'string'
@@ -281,7 +389,7 @@ export class DailyCheckInService {
     // Reserve outside the storage/finalization transaction: failed uploads still consume quota.
     const reservation = await this.prisma.$transaction(async tx => {
       await this.lockPatient(tx, link.patientId);
-      await this.resolve(tx, token);
+      if (actor) await this.patient(tx, actor.sub); else await this.resolve(tx, token);
       if (date !== checkInDate()) throw new ConflictException('填报日期已变化，请刷新页面');
       await this.checkPhotoQuota(tx, link.patientId, date);
       return tx.mediaAsset.create({ data });
@@ -290,16 +398,18 @@ export class DailyCheckInService {
       // Decode after quota admission, but before any original bytes reach local/OSS storage.
       await assertDailyCheckInImageIntegrity(file.buffer, mimeType);
       await this.media!.storeDailyCheckInPhoto(reservation, validated);
-      return await this.prisma.$transaction(async tx => {
+      const completed = await this.prisma.$transaction(async tx => {
         await this.lockPatient(tx, link.patientId);
-        const currentLink = await this.resolve(tx, token);
+        const currentLink = actor ? undefined : await this.resolve(tx, token);
+        if (actor) await this.patient(tx, actor.sub);
         if (date !== checkInDate()) throw new ConflictException('填报日期已变化，请刷新页面');
         const changed = await tx.mediaAsset.updateMany({ where: { id: reservation.id, ownerId: link.patientId, status: 'PENDING', referenceType: DAILY_PHOTO_TYPE, referenceId: `${date}:${meal}` }, data: { status: 'READY' } });
         if (changed.count !== 1) throw new ConflictException('照片上传状态已变化，请重试');
         const asset = await tx.mediaAsset.findUniqueOrThrow({ where: { id: reservation.id } });
-        await tx.auditLog.create({ data: { actorId: null, action: 'DAILY_CHECK_IN_PHOTO_UPLOAD', resourceType: 'MEDIA_ASSET', resourceId: asset.id, metadata: { patientId: link.patientId, date, meal, access: 'CAPABILITY_LINK' } } });
-        return this.publicPhotoView(asset, currentLink);
+        await tx.auditLog.create({ data: { actorId: actor?.sub ?? null, action: 'DAILY_CHECK_IN_PHOTO_UPLOAD', resourceType: 'MEDIA_ASSET', resourceId: asset.id, metadata: { patientId: link.patientId, date, meal, access: actor ? 'PATIENT_SESSION' : 'CAPABILITY_LINK' } } });
+        return { asset, currentLink };
       });
+      return actor ? this.media!.dailyCheckInPhotoView(actor, completed.asset.id) : this.publicPhotoView(completed.asset, completed.currentLink!);
     } catch (error) {
       // Retain any original bytes and their metadata for normal retention; never expose failed uploads.
       await this.prisma.mediaAsset.updateMany({ where: { id: reservation.id, ownerId: link.patientId, status: 'PENDING' }, data: { status: 'FAILED' } });
@@ -308,18 +418,33 @@ export class DailyCheckInService {
     }
   }
 
-  async refreshPhotos(dto: DailyCheckInPhotoRefreshDto) {
-    const link = await this.resolve(this.prisma, dto.token);
+  async refreshPhotos(dto: DailyCheckInPhotoRefreshDto | PatientDailyPhotoRefreshDto, req?: Request) {
+    const actor = req ? await this.patientActor(req) : undefined;
+    const link = actor ? { patientId: actor.sub } : await this.resolve(this.prisma, (dto as DailyCheckInPhotoRefreshDto).token);
     if (dto.date !== checkInDate()) throw new ConflictException('填报日期已变化，请刷新页面');
-    if (!Array.isArray(dto.photoIds) || dto.photoIds.length > 9 || new Set(dto.photoIds).size !== dto.photoIds.length
-      || dto.photoIds.some(id => typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id))) throw new BadRequestException('照片列表无效');
+    if (!Array.isArray(dto.photoIds) || dto.photoIds.length > 27 || new Set(dto.photoIds).size !== dto.photoIds.length
+      || dto.photoIds.some(id => typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,191}$/.test(id))) throw new BadRequestException('照片列表无效');
     return this.prisma.$transaction(async tx => {
       await this.lockPatient(tx, link.patientId);
-      const currentLink = await this.resolve(tx, dto.token);
+      const currentLink = actor ? undefined : await this.resolve(tx, (dto as DailyCheckInPhotoRefreshDto).token);
+      if (actor) await this.patient(tx, actor.sub);
       if (dto.date !== checkInDate()) throw new ConflictException('填报日期已变化，请刷新页面');
-      const assets = await tx.mediaAsset.findMany({ where: { id: { in: dto.photoIds }, ownerId: link.patientId, status: 'READY', deletedAt: null, referenceType: DAILY_PHOTO_TYPE, referenceId: { in: DAILY_MEALS.map(meal => `${dto.date}:${meal}`) } } });
+      const assets = await tx.mediaAsset.findMany({ where: { id: { in: dto.photoIds }, ownerId: link.patientId, status: 'READY', deletedAt: null, referenceType: { in: [DAILY_PHOTO_TYPE, 'HEALTH_RECORD'] } } });
       if (assets.length !== dto.photoIds.length) throw new NotFoundException('餐食照片不存在或已失效');
-      return { photos: dto.photoIds.map(id => this.publicPhotoView(assets.find(asset => asset.id === id)!, currentLink)) };
+      for (const asset of assets) if (!await this.publicReadablePhoto(tx, asset, link.patientId, dto.date)) throw new NotFoundException('餐食照片不存在或已失效');
+      return { photos: await Promise.all(dto.photoIds.map(id => actor ? this.media!.dailyCheckInPhotoView(actor, id, tx) : this.publicPhotoView(assets.find(asset => asset.id === id)!, currentLink!))) };
+    });
+  }
+
+  private async publicReadablePhoto(tx: Database, asset: MediaAsset, patientId: string, date: string) {
+    if (asset.ownerId !== patientId || asset.status !== 'READY' || asset.deletedAt) return false;
+    if (asset.referenceType === DAILY_PHOTO_TYPE && !asset.healthRecordId) return DAILY_MEALS.some(meal => asset.referenceId === `${date}:${meal}`);
+    if (!this.routine || !asset.healthRecordId || ![DAILY_PHOTO_TYPE, 'HEALTH_RECORD'].includes(asset.referenceType ?? '')) return false;
+    const snapshot = await this.routine.read(tx, patientId, date);
+    return DAILY_MEALS.some(meal => {
+      const record = snapshot.refs[meal];
+      return record && record.id === asset.healthRecordId && Array.isArray(record.imageUrls) && record.imageUrls.includes(asset.id)
+        && (asset.referenceType === DAILY_PHOTO_TYPE ? asset.referenceId === `${date}:${meal}` : asset.referenceId === record.id);
     });
   }
 
@@ -331,14 +456,14 @@ export class DailyCheckInService {
     if (!link || link.revokedAt || link.tokenHash !== hash(this.token(link.patientId, link.nonce))) throw invalidLink();
     await this.patient(this.prisma, link.patientId);
     const asset = await this.prisma.mediaAsset.findUnique({ where: { id } });
-    if (!asset || asset.ownerId !== link.patientId || asset.referenceType !== DAILY_PHOTO_TYPE || asset.status !== 'READY' || asset.deletedAt
-      || !DAILY_MEALS.some(meal => asset.referenceId === `${checkInDate()}:${meal}`)) throw new NotFoundException('餐食照片不存在或已失效');
+    if (!asset || !await this.publicReadablePhoto(this.prisma, asset, link.patientId, checkInDate())) throw new NotFoundException('餐食照片不存在或已失效');
     const expected = this.photoSignature(asset, link, expires);
     if (!timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) throw new ForbiddenException('照片链接已过期或无效');
     return this.media!.dailyCheckInPhotoContent(asset);
   }
 
   async records(req: Request, patientId: string, requestedPage?: string) {
+    if (this.routine) return this.routineRecords(req, patientId, requestedPage);
     const actor = await this.clinical.actor(req);
     const { patient, canViewLink, canManageLink } = await this.authorize(this.prisma, actor, patientId);
     const page = requestedPage === undefined ? 1 : Number(requestedPage);
@@ -408,4 +533,25 @@ export class DailyCheckInPublicController {
     if (!file.stream) throw new ServiceUnavailableException('文件读取失败');
     await pipeline(file.stream, res);
   }
+}
+
+@Injectable()
+export class PatientDailyPhotoUploadGuard implements CanActivate {
+  constructor(private readonly service: DailyCheckInService) {}
+  async canActivate(context: ExecutionContext) {
+    await this.service.authorizePhotoUpload('', context.switchToHttp().getRequest<Request>()); return true;
+  }
+}
+
+@Controller('daily-check-in')
+export class PatientDailyCheckInController {
+  constructor(private readonly service: DailyCheckInService) {}
+  @Get('today') today(@Req() req: Request) { return this.service.routineContext(undefined, req); }
+  @Post('submit') submit(@Req() req: Request, @Body() dto: PatientDailyCheckInDto) { return this.service.routineSubmit(dto, req); }
+  @Get('records') records(@Req() req: Request, @Query('page') page?: string) { return this.service.routineRecords(req, undefined, page); }
+  @Post('photos/refresh') refresh(@Req() req: Request, @Body() dto: PatientDailyPhotoRefreshDto) { return this.service.refreshPhotos(dto, req); }
+  @Post('photos')
+  @UseGuards(PatientDailyPhotoUploadGuard)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: DAILY_PHOTO_MAX_BYTES, files: 1, fields: 2, fieldSize: 100, parts: 4 } }))
+  upload(@Req() req: Request, @UploadedFile() file: UploadFile | undefined) { return this.service.uploadPhoto('', req.body as Record<string, unknown>, file, req); }
 }

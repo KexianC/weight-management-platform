@@ -47,11 +47,15 @@ export function serializeDailyAnswers(answers: DailyCheckInAnswers, photos: Pick
   const result = Object.fromEntries(Object.entries(answers).filter(([, value]) => value !== undefined && value !== '')) as DailyCheckInAnswers;
   for (const meal of dailyMeals) {
     const ids = photos.filter(photo => photo.meal === meal.key && photo.status === 'ready' && photo.id).map(photo => photo.id!);
-    if (ids.length > 3) throw new Error('每餐最多添加 3 张照片');
+    if (ids.length > 9) throw new Error('每餐最多添加 9 张照片');
     if (ids.length) result[meal.photoKey] = ids;
     else delete result[meal.photoKey];
   }
   return result;
+}
+export function changedDailyFields(previous: DailyCheckInRecord | null | undefined, weightKg: number, answers: DailyCheckInAnswers): string[] {
+  const keys = new Set([...Object.keys(previous?.answers ?? {}), ...Object.keys(answers)]);
+  return [...(previous?.weightKg !== weightKg ? ['weightKg'] : []), ...[...keys].filter(key => JSON.stringify(previous?.answers[key as keyof DailyCheckInAnswers]) !== JSON.stringify(answers[key as keyof DailyCheckInAnswers]))];
 }
 type FormScope = { epoch: number; token: string; date: string };
 
@@ -104,10 +108,11 @@ function DailyCheckInForm({ token }: { token: string }) {
     publicRequest<DailyCheckInContext>('context', { token }, controller.signal).then(data => {
       if (controller.signal.aborted || generation !== epoch.current) return;
       scope.current = { epoch: generation, token, date: data.date };
-      setContext(data); setWeight(data.record ? String(data.record.weightKg) : '');
-      setAnswers(data.record?.answers ?? {});
-      const metadata = data.record?.photos ?? [];
-      updatePhotos(() => dailyMeals.flatMap(meal => (data.record?.answers[meal.photoKey] ?? []).map(id => {
+      const existing = data.record ?? data.draft;
+      setContext(data); setWeight(existing?.weightKg == null ? '' : String(existing.weightKg));
+      setAnswers(existing?.answers ?? {});
+      const metadata = existing?.photos ?? [];
+      updatePhotos(() => dailyMeals.flatMap(meal => (existing?.answers[meal.photoKey] ?? []).map(id => {
         const photo = metadata.find(item => item.id === id);
         return { key: `saved-${meal.key}-${id}`, meal: meal.key, status: 'ready' as const, id, preview: photo?.url ?? '', previewError: !photo?.url };
       })));
@@ -121,6 +126,10 @@ function DailyCheckInForm({ token }: { token: string }) {
     setAnswers(previous => {
       const next = { ...previous };
       if (value === '') delete next[key]; else Object.assign(next, { [key]: numeric ? Number(value) : value });
+      if (key === 'sleep_start' || key === 'sleep_end') {
+        const minutes = dailySleepMinutes(next.sleep_start, next.sleep_end);
+        if (minutes !== null) next.sleep_hours = Math.round(minutes / 60 * 100) / 100;
+      } else if (key === 'sleep_hours') { delete next.sleep_start; delete next.sleep_end; }
       return next;
     });
   }
@@ -156,7 +165,7 @@ function DailyCheckInForm({ token }: { token: string }) {
     if (!files || savingNow.current || needsReload || !scope.current) return;
     let issue = '';
     for (const file of Array.from(files)) {
-      if (photoState.current.filter(photo => photo.meal === meal).length >= 3) { issue = '每餐最多添加 3 张照片'; break; }
+      if (photoState.current.filter(photo => photo.meal === meal).length >= 9) { issue = '每餐最多添加 9 张照片'; break; }
       try { validateDailyPhoto(file); } catch (reason) { issue = (reason as Error).message; continue; }
       const photo: PhotoDraft = { key: `upload-${++sequence.current}`, meal, file, preview: URL.createObjectURL(file), ownedPreview: true, status: 'uploading' };
       updatePhotos(items => [...items, photo]); void startUpload(photo);
@@ -205,9 +214,9 @@ function DailyCheckInForm({ token }: { token: string }) {
     savingNow.current = true; setSaving(true);
     const controller = new AbortController(); requests.current.add(controller);
     try {
-      const record = await publicRequest<DailyCheckInRecord>('submit', { token: captured.token, date: captured.date, version: context.record?.version ?? 0, weightKg, answers: submittedAnswers }, controller.signal);
+      const record = await publicRequest<DailyCheckInRecord>('submit', { token: captured.token, date: captured.date, version: (context.record ?? context.draft)?.version ?? 0, revision: context.revision, weightKg, answers: submittedAnswers, changedFields: changedDailyFields(context.record ?? context.draft, weightKg, submittedAnswers) }, controller.signal);
       if (!controller.signal.aborted && current(captured)) {
-        setContext({ ...context, record }); setAnswers(record.answers); setSaved(true); window.scrollTo({ top: 0, behavior: 'smooth' });
+        setContext({ ...context, record, draft: null, revision: record.revision }); setAnswers(record.answers); setSaved(true); window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (reason) {
       if (!controller.signal.aborted && current(captured)) {
@@ -242,7 +251,7 @@ function DailyCheckInForm({ token }: { token: string }) {
           <summary><span>今日状态 <small>选填</small></span><ChevronDownIcon className="daily-expand-icon" aria-hidden="true" /></summary>
           <fieldset disabled={saving}>
             <div className="daily-metric-grid">
-              <label className="daily-answer-field">腰围 (cm)<input type="number" inputMode="decimal" min="30" max="300" step="0.1" placeholder="未填写" value={answers.waist_cm ?? ''} onChange={event => answer('waist_cm', event.target.value, true)} /></label>
+              <label className="daily-answer-field">腰围 (cm)<input type="number" inputMode="decimal" min="20" max="300" step="0.01" placeholder="未填写" value={answers.waist_cm ?? ''} onChange={event => answer('waist_cm', event.target.value, true)} /></label>
               <label className="daily-answer-field">运动 (分钟)<input type="number" inputMode="numeric" min="0" max="1440" step="1" placeholder="未填写" value={answers.exercise_minutes ?? ''} onChange={event => answer('exercise_minutes', event.target.value, true)} /></label>
               <label className="daily-answer-field">饮水 (ml)<input type="number" inputMode="numeric" min="0" max="20000" step="1" placeholder="未填写" value={answers.water_ml ?? ''} onChange={event => answer('water_ml', event.target.value, true)} /></label>
             </div>
@@ -251,6 +260,7 @@ function DailyCheckInForm({ token }: { token: string }) {
               <label className="daily-answer-field">起床时间<input type="time" value={answers.sleep_end ?? ''} onChange={event => answer('sleep_end', event.target.value)} /></label>
             </div>
             {sleepDuration !== null && <p className="daily-sleep-duration" role="status">睡眠时长 {dailySleepLabel(answers.sleep_start, answers.sleep_end)}</p>}
+            {sleepDuration === null && <label className="daily-answer-field">睡眠时长（小时）<input type="number" inputMode="decimal" min="0" max="24" step="0.01" placeholder="未填写" value={answers.sleep_hours ?? ''} onChange={event => answer('sleep_hours', event.target.value, true)} /></label>}
             {dailyCheckInQuestions.filter(question => question.options?.length && question.key !== 'bowel_ease').map(question => <label className="daily-answer-field" key={question.key}>{question.label}<select value={answers[question.key] ?? ''} onChange={event => answer(question.key, event.target.value, true)}><option value="">暂不填写</option>{question.options?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
             <label className="daily-answer-field">今日排便次数<input type="number" inputMode="numeric" min="0" max="30" step="1" placeholder="未填写" value={answers.bowel_count ?? ''} onChange={event => answer('bowel_count', event.target.value, true)} /></label>
             <label className="daily-answer-field">排便是否顺畅<select value={answers.bowel_ease ?? ''} onChange={event => answer('bowel_ease', event.target.value)}><option value="">暂不填写</option>{bowelEaseOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
@@ -267,7 +277,7 @@ function DailyCheckInForm({ token }: { token: string }) {
               {photo.status === 'failed' && <div className="daily-photo-error"><p role="alert">{photo.error || '上传失败'}</p><button type="button" disabled={needsReload} onClick={() => void startUpload(photo)}>重试上传</button></div>}
               {photo.status === 'ready' && photo.previewError && <div className="daily-photo-error">{photo.error && <p role="alert">{photo.error}</p>}<button type="button" disabled={photo.refreshing || needsReload} onClick={() => void refreshPhoto(photo)}>{photo.refreshing ? '加载中…' : '重试预览'}</button></div>}
             </div>)}</div>
-            <label className="daily-photo-add">添加{meal.label}照片 ({photos.filter(photo => photo.meal === meal.key).length}/3)<input aria-label={`添加${meal.label}照片`} type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={saving || needsReload || photos.filter(photo => photo.meal === meal.key).length >= 3} onChange={event => { addPhotos(meal.key, event.currentTarget.files); event.currentTarget.value = ''; }} /></label>
+            <label className="daily-photo-add">添加{meal.label}照片 ({photos.filter(photo => photo.meal === meal.key).length}/9)<input aria-label={`添加${meal.label}照片`} type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={saving || needsReload || photos.filter(photo => photo.meal === meal.key).length >= 9} onChange={event => { addPhotos(meal.key, event.currentTarget.files); event.currentTarget.value = ''; }} /></label>
             {mealErrors[meal.key] && <p className="daily-meal-error" role="alert">{mealErrors[meal.key]}</p>}
           </fieldset>)}
         </section>

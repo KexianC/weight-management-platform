@@ -8,13 +8,13 @@ const updatedTime = (value: string) => new Intl.DateTimeFormat('zh-CN', { timeZo
 export function DailyCheckInRecordView({ record }: { record: DailyCheckInRecord }) {
   const metric = (key: 'waist_cm' | 'exercise_minutes' | 'water_ml', suffix: string) => record.answers[key] === undefined ? '未填写' : `${record.answers[key]} ${suffix}`;
   return <article className="daily-staff-record">
-    <header><div><h4>{record.date}</h4><small>更新于 {updatedTime(record.updatedAt)} · 北京时间</small></div><strong>{record.weightKg} <small>kg</small></strong></header>
+    <header><div><h4>{record.date}</h4><small>更新于 {updatedTime(record.updatedAt)} · 北京时间</small></div><strong>{record.weightKg == null ? '体重未填' : <>{record.weightKg} <small>kg</small></>}</strong></header>
     <details><summary>查看每日信息</summary><dl>
       <div><dt>腰围</dt><dd>{metric('waist_cm', 'cm')}</dd></div>
       <div><dt>运动</dt><dd>{metric('exercise_minutes', '分钟')}</dd></div>
       <div><dt>饮水</dt><dd>{metric('water_ml', 'ml')}</dd></div>
       <div><dt>睡眠时段</dt><dd>{record.answers.sleep_start || record.answers.sleep_end ? `${record.answers.sleep_start ?? '未填写'} → ${record.answers.sleep_end ?? '未填写'}` : '未填写'}</dd></div>
-      <div><dt>睡眠时长</dt><dd>{dailySleepLabel(record.answers.sleep_start, record.answers.sleep_end)}</dd></div>
+      <div><dt>睡眠时长</dt><dd>{dailySleepLabel(record.answers.sleep_start, record.answers.sleep_end, record.answers.sleep_hours)}</dd></div>
       {dailyCheckInQuestions.map(question => <div key={question.key}><dt>{question.label}</dt><dd>{record.redactedAnswerKeys?.includes(question.key) ? '当前权限不显示' : dailyCheckInAnswerLabel(question, record.answers[question.key])}</dd></div>)}
     </dl><p>三餐记录 · 已记录 {dailyMealCount(record.answers)}/3 餐</p><div className="daily-staff-meals">{dailyMeals.map(meal => <section key={meal.key}><h5>{meal.label}</h5><p>{record.answers[meal.textKey] || '未填写'}</p>
       <div className="daily-staff-photos">{(record.answers[meal.photoKey] ?? []).map((id, index) => {

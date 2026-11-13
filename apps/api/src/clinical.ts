@@ -313,7 +313,7 @@ export class ClinicalService {
     const { periodStart, periodEnd, endExclusive, days } = summaryPeriodBounds(dto.periodType, dto.referenceDate);
     const [records, tasks] = await Promise.all([
       this.prisma.healthRecord.findMany({
-        where: { patientId, measuredAt: { gte: periodStart, lt: endExclusive } },
+        where: { patientId, source: { not: 'DAILY_ROUTINE' }, measuredAt: { gte: periodStart, lt: endExclusive } },
         orderBy: { measuredAt: 'asc' },
       }),
       this.prisma.patientTask.findMany({
@@ -460,7 +460,7 @@ export class ClinicalService {
       where: { id: patientId },
       include: {
         ...this.patientInclude(actor.sub),
-        healthRecords: { orderBy: { measuredAt: 'desc' }, take: 100 },
+        healthRecords: { where: { source: { not: 'DAILY_ROUTINE' } }, orderBy: { measuredAt: 'desc' }, take: 100 },
         receivedTasks: { where: actor.role === 'HEALTH_MANAGER' ? {} : { assignedById: actor.sub }, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], ...(actor.role === 'HEALTH_MANAGER' ? {} : { take: 100 }) },
         followUpsAsPatient: { where: actor.role === 'HEALTH_MANAGER' ? {} : { practitionerId: actor.sub }, orderBy: [{ scheduledAt: 'desc' }, { id: 'asc' }], ...(actor.role === 'HEALTH_MANAGER' ? {} : { take: 100 }) },
       },
@@ -640,7 +640,7 @@ export class ClinicalService {
     const page=Number(pageInput??1),pageSize=Number(sizeInput??200);
     if (!Number.isInteger(page)||page<1||!Number.isInteger(pageSize)||pageSize<1||pageSize>200) throw new BadRequestException('分页须为正整数，每页最多200条');
     const allowed=['WEIGHT','DIET','EXERCISE','MEDICATION','QUESTIONNAIRE','GENERAL','BLOOD_PRESSURE','SYMPTOM','SLEEP'];
-    const where:Prisma.HealthRecordWhereInput={patientId,...(recordType&&allowed.includes(recordType.toUpperCase())?{recordType:recordType.toUpperCase() as any}:{})};
+    const where:Prisma.HealthRecordWhereInput={patientId,source:{not:'DAILY_ROUTINE'},...(recordType&&allowed.includes(recordType.toUpperCase())?{recordType:recordType.toUpperCase() as any}:{})};
     const rows=await this.prisma.healthRecord.findMany({where,include:{assets:{where:{status:'READY'},select:{id:true,mimeType:true,createdAt:true}},reviews:{include:{practitioner:{select:{id:true,displayName:true,role:true}},replies:true},orderBy:{createdAt:'asc'}}},orderBy:[{measuredAt:'desc'},{id:'asc'}],skip:(page-1)*pageSize,take:pageSize});
     const items=actor.role==='NUTRITIONIST'?rows.filter(r=>['WEIGHT','DIET','SLEEP'].includes(r.recordType)).map(r=>({id:r.id,patientId:r.patientId,recordType:r.recordType,measuredAt:r.measuredAt,weightKg:r.weightKg,waistCm:r.waistCm,hipCm:r.hipCm,bodyFatPct:r.bodyFatPct,sleepHours:r.sleepHours,mealType:r.mealType,caloriesKcal:r.caloriesKcal,caloriesSource:r.caloriesSource,source:r.source})):businessProjection(rows);
     if (!paginated) return items;
@@ -661,7 +661,7 @@ export class ClinicalService {
   async patientStats(actor: Actor, patientId: string) {
     const patient = await this.patient(actor, patientId);
     const [totalRecords, statusGroups] = await Promise.all([
-      this.prisma.healthRecord.count({ where: { patientId } }),
+      this.prisma.healthRecord.count({ where: { patientId, source: { not: 'DAILY_ROUTINE' } } }),
       this.prisma.followUp.groupBy({
         by: ['status'],
         where: { patientId, practitionerId: actor.sub },
