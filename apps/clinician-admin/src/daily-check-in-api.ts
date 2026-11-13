@@ -10,12 +10,49 @@ export type DailyCheckInAnswers = {
   bowel_ease?: 'SMOOTH' | 'STRAINED' | 'DIFFICULT' | 'BLOATING';
   bowel_extra?: string;
   stool_type?: number;
+  waist_cm?: number;
+  exercise_minutes?: number;
+  water_ml?: number;
+  sleep_start?: string;
+  sleep_end?: string;
+  breakfast_text?: string;
+  lunch_text?: string;
+  dinner_text?: string;
+  breakfast_photo_ids?: string[];
+  lunch_photo_ids?: string[];
+  dinner_photo_ids?: string[];
 };
-export type DailyCheckInRecord = { date: string; version: number; weightKg: number; answers: DailyCheckInAnswers; updatedAt: string; redactedAnswerKeys?: (keyof DailyCheckInAnswers)[] };
+export type DailyCheckInPhoto = { id: string; mimeType: string; url: string };
+export type DailyCheckInRecord = { date: string; version: number; weightKg: number; answers: DailyCheckInAnswers; updatedAt: string; photos?: DailyCheckInPhoto[]; redactedAnswerKeys?: (keyof DailyCheckInAnswers)[] };
 export type DailyCheckInContext = { date: string; clientLabel: string; record: DailyCheckInRecord | null };
 export type DailyCheckInLink = { url: string; qrDataUrl: string; revoked: boolean };
 export type DailyCheckInRecordPage = { items: DailyCheckInRecord[]; total: number; page: number; pageSize: number; hasMore: boolean; canViewLink?: boolean; canManageLink?: boolean };
 export type DailyCheckInQuestion = { key: keyof DailyCheckInAnswers; label: string; options?: ReadonlyArray<{ value: number | string; label: string }> };
+
+export const dailyMeals = [
+  { key: 'breakfast', label: '早餐', textKey: 'breakfast_text', photoKey: 'breakfast_photo_ids' },
+  { key: 'lunch', label: '午餐', textKey: 'lunch_text', photoKey: 'lunch_photo_ids' },
+  { key: 'dinner', label: '晚餐', textKey: 'dinner_text', photoKey: 'dinner_photo_ids' },
+] as const;
+export type DailyMeal = typeof dailyMeals[number]['key'];
+export function dailyMealCount(answers: DailyCheckInAnswers): number {
+  return dailyMeals.filter(meal => answers[meal.textKey]?.trim() || answers[meal.photoKey]?.length).length;
+}
+export function dailySleepMinutes(start?: string, end?: string): number | null {
+  const valid = (value?: string): value is string => typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+  if (!valid(start) || !valid(end)) return null;
+  const minute = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+  return (minute(end) - minute(start) + 24 * 60) % (24 * 60);
+}
+export function dailySleepLabel(start?: string, end?: string): string {
+  const minutes = dailySleepMinutes(start, end);
+  if (minutes === null) return '未填写';
+  return `${Math.floor(minutes / 60)}小时${minutes % 60 ? `${minutes % 60}分钟` : ''}`;
+}
+export function validateDailyPhoto(file: Pick<File, 'type' | 'size'>): void {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('请选择 JPG、PNG 或 WebP 照片');
+  if (file.size <= 0 || file.size > 10 * 1024 * 1024) throw new Error('每张照片须大于 0 且不超过 10 MB');
+}
 
 export const bowelEaseOptions = [
   { value: 'SMOOTH', label: '顺畅' }, { value: 'STRAINED', label: '稍费力' },
@@ -69,6 +106,7 @@ export function dailyCheckInShareUrl(value: string): string | null {
 
 const endpoint = (patientId: string) => '/care-management/patients/' + encodeURIComponent(patientId) + '/daily-check-in';
 export const dailyCheckInApi = {
+  photoBlob: (photo: DailyCheckInPhoto) => api.mediaBlob(photo.id, photo.url),
   link: (patientId: string) => api.request<DailyCheckInLink>(endpoint(patientId) + '/link'),
   reset: (patientId: string) => api.request<DailyCheckInLink>(endpoint(patientId) + '/link/reset', { method: 'POST' }),
   revoke: (patientId: string) => api.request(endpoint(patientId) + '/link', { method: 'DELETE' }),

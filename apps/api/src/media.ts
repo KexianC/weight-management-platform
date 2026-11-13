@@ -32,6 +32,7 @@ import { PrismaService } from './prisma.service';
 import { CareManagementService } from './care-management';
 import { canReadYuanqizhanMedia } from './yuanqizhan-media-access';
 import { memberWindow, PHOTO_SLOTS } from './yuanqizhan-policy';
+import { canReadDailyCheckInPhoto, DAILY_PHOTO_TYPE, DAILY_PHOTO_MAX_BYTES, DailyMeal } from './daily-check-in-photo-policy';
 
 const URL_TTL_SECONDS = 600;
 const mimeExtensions: Record<string, string> = {
@@ -46,7 +47,7 @@ const businessMediaTypes = new Set([
   'POSTURE_PHOTO', 'EXERCISE_VIDEO', 'CONSENT_DOCUMENT', 'HEALTH_REPORT', 'OCR_SOURCE',
 ]);
 
-type UploadFile = { buffer: Buffer; mimetype: string; size: number; originalname: string };
+export type UploadFile = { buffer: Buffer; mimetype: string; size: number; originalname: string };
 type MediaContent = {
   mimeType: string;
   fullPath?: string;
@@ -239,6 +240,11 @@ export class MediaService {
   private async authorize(actor: Actor, id: string) {
     const asset = await this.prisma.mediaAsset.findUnique({ where: { id } });
     if (!asset || asset.status !== 'READY') throw new NotFoundException('文件不存在');
+    if (asset.referenceType === DAILY_PHOTO_TYPE) {
+      if (!await canReadDailyCheckInPhoto(this.prisma, actor, asset)) throw new ForbiddenException('无权访问该餐食照片');
+      await this.prisma.auditLog.create({ data: { actorId: actor.sub, action: 'DAILY_CHECK_IN_PHOTO_READ', resourceType: 'MEDIA_ASSET', resourceId: id } });
+      return asset;
+    }
     if (asset.referenceType === 'YUANQIZHAN_PHOTO') {
       if (await canReadYuanqizhanMedia(this.prisma, actor, asset)) return asset;
       throw new ForbiddenException('无权访问该活动照片');
@@ -303,7 +309,7 @@ export class MediaService {
     if (!['HEALTH_MANAGER', 'DOCTOR', 'PATIENT'].includes(actor.role)) throw new ForbiddenException('无权读取识别原图');
     const asset = await this.prisma.mediaAsset.findUnique({ where: { id } });
     if (!asset || asset.ownerId !== actor.sub || asset.status !== 'READY') throw new ForbiddenException('请选择本人上传且可用的识别原图');
-    if (asset.referenceType === 'YUANQIZHAN_PHOTO') throw new ForbiddenException('活动照片不用于识别或第三方处理');
+    if (asset.referenceType === 'YUANQIZHAN_PHOTO' || asset.referenceType === DAILY_PHOTO_TYPE) throw new ForbiddenException('活动或餐食照片不用于识别或第三方处理');
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(asset.mimeType) || !asset.sha256 || !/^[a-f0-9]{64}$/.test(asset.sha256)) throw new BadRequestException('识别来源须为完整校验的图片');
     if (!asset.sizeBytes || Number(asset.sizeBytes) > 10 * 1024 * 1024) throw new BadRequestException('识别原图大小无效或超过10MB');
     let bytes: Buffer;
@@ -329,6 +335,61 @@ export class MediaService {
     const actor = await this.clinical.actor(req);
     const asset = await this.authorize(actor, id);
     return { id, mimeType: asset.mimeType, url: this.privateUrl(id, actor), expiresIn: URL_TTL_SECONDS, requiresAuthorization: true };
+  }
+
+  async dailyCheckInPhotoView(actor: Actor, id: string) {
+    const asset = await this.authorize(actor, id);
+    if (asset.referenceType !== DAILY_PHOTO_TYPE) throw new ForbiddenException('餐食照片关联无效');
+    return { id, mimeType: asset.mimeType, url: this.privateUrl(id, actor) };
+  }
+
+  /** Build a durable quota reservation before external storage. No bytes are written here. */
+  dailyCheckInPhotoData(ownerId: string, date: string, meal: DailyMeal, file: UploadFile): Prisma.MediaAssetUncheckedCreateInput {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype) || !Buffer.isBuffer(file.buffer)
+      || file.size !== file.buffer.length || file.size < 1 || file.size > DAILY_PHOTO_MAX_BYTES) throw new BadRequestException('餐食照片必须为10MiB以内的有效图片');
+    this.signingSecret();
+    const configured = [process.env.OSS_ACCESS_KEY_ID, process.env.OSS_ACCESS_KEY_SECRET, process.env.OSS_BUCKET, process.env.OSS_REGION];
+    if (configured.some(Boolean) && !configured.every(Boolean)) throw new ServiceUnavailableException('原件存储配置不完整');
+    const id = randomUUID();
+    return {
+      id, ownerId, provider: configured.every(Boolean) ? 'ALIYUN_OSS' : 'LOCAL', bucket: process.env.OSS_BUCKET ?? null,
+      objectKey: 'weight-care/' + createHash('sha256').update(ownerId).digest('hex').slice(0, 24) + '/daily-meals/' + date + '/' + id + mimeExtensions[file.mimetype],
+      mimeType: file.mimetype, sizeBytes: BigInt(file.size), sha256: createHash('sha256').update(file.buffer).digest('hex'),
+      scope: 'PRIVATE', status: 'PENDING', referenceType: DAILY_PHOTO_TYPE, referenceId: date + ':' + meal,
+    };
+  }
+
+  /** The committed PENDING row tracks retained originals even if finalization fails. */
+  async storeDailyCheckInPhoto(asset: MediaAsset, file: UploadFile) {
+    if (asset.referenceType !== DAILY_PHOTO_TYPE || asset.status !== 'PENDING' || asset.sha256 !== createHash('sha256').update(file.buffer).digest('hex')
+      || Number(asset.sizeBytes) !== file.buffer.length || asset.mimeType !== file.mimetype) throw new ForbiddenException('餐食照片预留无效');
+    if (asset.provider === 'ALIYUN_OSS') {
+      const oss = this.ossClient();
+      if (!oss || asset.bucket !== process.env.OSS_BUCKET) throw new ServiceUnavailableException('原件存储配置不可用');
+      await oss.put(asset.objectKey, file.buffer, { mime: asset.mimeType });
+    } else if (asset.provider === 'LOCAL') {
+      const fullPath = this.localPath(asset.objectKey);
+      await mkdir(resolve(fullPath, '..'), { recursive: true });
+      await writeFile(fullPath, file.buffer, { flag: 'wx' });
+    } else throw new ServiceUnavailableException('未知媒体存储类型');
+  }
+
+  /** Internal only: the capability service checks the current link before every read. */
+  async dailyCheckInPhotoContent(asset: MediaAsset): Promise<MediaContent> {
+    if (asset.referenceType !== DAILY_PHOTO_TYPE || asset.status !== 'READY' || asset.deletedAt) throw new NotFoundException('餐食照片不存在');
+    if (asset.provider === 'LOCAL') return { fullPath: this.localPath(asset.objectKey), mimeType: asset.mimeType };
+    if (asset.provider !== 'ALIYUN_OSS') throw new ServiceUnavailableException('未知媒体存储类型');
+    const oss = this.ossClient();
+    if (!oss || asset.bucket !== process.env.OSS_BUCKET) throw new ServiceUnavailableException('原件存储配置不可用');
+    try {
+      const result = await oss.getStream(asset.objectKey);
+      if (!result.stream || result.res.status !== 200) throw new ServiceUnavailableException('文件读取失败');
+      return { stream: result.stream as Readable, mimeType: asset.mimeType };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      if ((error as { code?: string }).code === 'NoSuchKey') throw new NotFoundException('餐食照片不存在');
+      throw new ServiceUnavailableException('媒体存储暂时不可用，请重试');
+    }
   }
 
   // Despite the legacy name, this serves LOCAL and OSS through the same authenticated route.

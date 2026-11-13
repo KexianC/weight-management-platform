@@ -1,15 +1,55 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { dailyCheckInAnswerLabel, dailyCheckInApi, dailyCheckInQuestions, dailyCheckInShareUrl, type DailyCheckInLink, type DailyCheckInRecord, type DailyCheckInRecordPage } from './daily-check-in-api';
+import { dailyCheckInAnswerLabel, dailyCheckInApi, dailyCheckInQuestions, dailyCheckInShareUrl, dailyMealCount, dailyMeals, dailySleepLabel, type DailyCheckInPhoto, type DailyCheckInLink, type DailyCheckInRecord, type DailyCheckInRecordPage } from './daily-check-in-api';
 import './daily-check-in-panel.css';
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : '操作失败，请重试';
 const updatedTime = (value: string) => new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 
 export function DailyCheckInRecordView({ record }: { record: DailyCheckInRecord }) {
+  const metric = (key: 'waist_cm' | 'exercise_minutes' | 'water_ml', suffix: string) => record.answers[key] === undefined ? '未填写' : `${record.answers[key]} ${suffix}`;
   return <article className="daily-staff-record">
     <header><div><h4>{record.date}</h4><small>更新于 {updatedTime(record.updatedAt)} · 北京时间</small></div><strong>{record.weightKg} <small>kg</small></strong></header>
-    <details><summary>查看每日信息</summary><dl>{dailyCheckInQuestions.map(question => <div key={question.key}><dt>{question.label}</dt><dd>{record.redactedAnswerKeys?.includes(question.key) ? '当前权限不显示' : dailyCheckInAnswerLabel(question, record.answers[question.key])}</dd></div>)}</dl></details>
+    <details><summary>查看每日信息</summary><dl>
+      <div><dt>腰围</dt><dd>{metric('waist_cm', 'cm')}</dd></div>
+      <div><dt>运动</dt><dd>{metric('exercise_minutes', '分钟')}</dd></div>
+      <div><dt>饮水</dt><dd>{metric('water_ml', 'ml')}</dd></div>
+      <div><dt>睡眠时段</dt><dd>{record.answers.sleep_start || record.answers.sleep_end ? `${record.answers.sleep_start ?? '未填写'} → ${record.answers.sleep_end ?? '未填写'}` : '未填写'}</dd></div>
+      <div><dt>睡眠时长</dt><dd>{dailySleepLabel(record.answers.sleep_start, record.answers.sleep_end)}</dd></div>
+      {dailyCheckInQuestions.map(question => <div key={question.key}><dt>{question.label}</dt><dd>{record.redactedAnswerKeys?.includes(question.key) ? '当前权限不显示' : dailyCheckInAnswerLabel(question, record.answers[question.key])}</dd></div>)}
+    </dl><p>三餐记录 · 已记录 {dailyMealCount(record.answers)}/3 餐</p><div className="daily-staff-meals">{dailyMeals.map(meal => <section key={meal.key}><h5>{meal.label}</h5><p>{record.answers[meal.textKey] || '未填写'}</p>
+      <div className="daily-staff-photos">{(record.answers[meal.photoKey] ?? []).map((id, index) => {
+        const photo = record.photos?.find(item => item.id === id);
+        return photo ? <DailyRecordPhoto key={`${id}:${photo.url}:${record.updatedAt}`} photo={photo} label={`${meal.label}照片${index + 1}`} /> : <span key={id}>照片暂不可用</span>;
+      })}</div>
+    </section>)}</div></details>
   </article>;
+}
+
+function DailyRecordPhoto({ photo, label }: { photo: DailyCheckInPhoto; label: string }) {
+  const [preview, setPreview] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const alive = useRef(true);
+  const objectUrl = useRef('');
+  const pending = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; if (objectUrl.current) URL.revokeObjectURL(objectUrl.current); };
+  }, []);
+  async function load() {
+    if (pending.current) return;
+    pending.current = true; setBusy(true); setError('');
+    try {
+      const blob = await dailyCheckInApi.photoBlob(photo);
+      if (!alive.current) return;
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(blob.type)) throw new Error('照片格式不可预览');
+      if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+      objectUrl.current = URL.createObjectURL(blob); setPreview(objectUrl.current);
+    } catch {
+      if (alive.current) setError('照片暂不可用，请重试或刷新记录。');
+    } finally { if (alive.current) { pending.current = false; setBusy(false); } }
+  }
+  return <div className="daily-staff-photo">{preview ? <a href={preview} target="_blank" rel="noreferrer"><img src={preview} alt={label} /></a> : <button type="button" disabled={busy} onClick={() => void load()}>{busy ? '加载中…' : `查看${label}`}</button>}{error && <p role="alert">{error}</p>}</div>;
 }
 
 type PanelProps = { patientId: string; canManageLink: boolean };
