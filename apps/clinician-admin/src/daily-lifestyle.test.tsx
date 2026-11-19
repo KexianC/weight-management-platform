@@ -22,14 +22,14 @@ describe('daily lifestyle values', () => {
     expect(normalizedDailyWeight('131', 'JIN')).toBe(65.5);
     expect(normalizedDailyWeight('65.5', 'KG')).toBe(65.5);
   });
-  it('submits weight-only answers empty, keeps explicit zero/partial times and omits failed or deleted photos', () => {
+  it('submits weight-only answers empty, keeps zero bowel count and omits hidden answers and unfinished photos', () => {
     expect(serializeDailyAnswers({}, [])).toEqual({});
-    const answer = serializeDailyAnswers({ exercise_minutes: 0, water_ml: 0, sleep_start: '00:00', breakfast_text: '', breakfast_photo_ids: ['deleted'] }, [
+    const answer = serializeDailyAnswers({ bowel_count: 0, other_note: '  今天外出  ', exercise_minutes: 0, water_ml: 0, sleep_start: '00:00', breakfast_text: '', breakfast_photo_ids: ['deleted'] }, [
       { meal: 'breakfast', status: 'failed', id: 'never-submit' },
       { meal: 'lunch', status: 'uploading' },
       { meal: 'dinner', status: 'ready', id: 'successful' },
     ]);
-    expect(answer).toEqual({ exercise_minutes: 0, water_ml: 0, sleep_start: '00:00', dinner_photo_ids: ['successful'] });
+    expect(answer).toEqual({ bowel_count: 0, other_note: '今天外出', dinner_photo_ids: ['successful'] });
     expect(serializeDailyAnswers({ dinner_photo_ids: ['successful'] }, [])).toEqual({});
     expect(() => serializeDailyAnswers({}, Array.from({ length: 10 }, (_, index) => ({ meal: 'breakfast' as const, status: 'ready' as const, id: String(index) })))).toThrow('每餐最多');
   });
@@ -45,12 +45,14 @@ describe('daily lifestyle values', () => {
 });
 
 describe('daily shared snapshot changes', () => {
-  it('only marks explicitly changed fields, retaining old meal photos and missing weight drafts', () => {
-    const previous = { date: '2026-11-13', version: 0, weightKg: null, updatedAt: '2026-11-13T02:00:00Z', answers: { water_ml: 1800, breakfast_photo_ids: Array.from({ length: 9 }, (_, i) => 'p' + i), sleep_hours: 7.5 } };
-    expect(changedDailyFields(previous, 65.5, { ...previous.answers, water_ml: 2000 })).toEqual(['weightKg', 'water_ml']);
-    const cleared = { ...previous.answers }; delete (cleared as { sleep_hours?: number }).sleep_hours;
-    expect(changedDailyFields(previous, 65.5, cleared)).toEqual(['weightKg', 'sleep_hours']);
-    expect(serializeDailyAnswers({}, Array.from({ length: 9 }, (_, i) => ({ meal: 'breakfast' as const, status: 'ready' as const, id: 'p' + i }))).breakfast_photo_ids).toHaveLength(9);
+  it('updates only editable fields, allowing deliberate clear without removing historical answers', () => {
+    const photos = Array.from({ length: 9 }, (_, i) => ({ meal: 'breakfast' as const, status: 'ready' as const, id: 'p' + i }));
+    const previous = { date: '2026-11-13', version: 0, weightKg: null, updatedAt: '2026-11-13T02:00:00Z', answers: { water_ml: 1800, sleep_hours: 7.5, exercise_minutes: 30, stool_type: 4, bowel_extra: '旧附加观察', other_note: '旧备注', breakfast_photo_ids: photos.map(photo => photo.id) } };
+    const submitted = serializeDailyAnswers({ ...previous.answers, other_note: '新备注' }, photos);
+    expect(changedDailyFields(previous, 65.5, submitted)).toEqual(['weightKg', 'other_note']);
+    const cleared = serializeDailyAnswers({ ...previous.answers, other_note: ' ' }, []);
+    expect(changedDailyFields(previous, 65.5, cleared)).toEqual(['weightKg', 'other_note', 'breakfast_photo_ids']);
+    expect(submitted.breakfast_photo_ids).toHaveLength(9);
     expect(dailySleepLabel(undefined, undefined, 7.5)).toBe('7.5小时');
   });
 });

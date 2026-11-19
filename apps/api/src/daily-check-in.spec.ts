@@ -29,6 +29,7 @@ function harness() {
       count: jest.fn(async ({ where }) => records.filter(row => row.patientId === where.patientId).length),
     },
     healthRecord: {
+      findMany: jest.fn(async () => []),
       create: jest.fn(async ({ data }) => { const row = { ...data, id: 'health-' + health.length }; health.push(row); return row; }),
       update: jest.fn(async ({ where, data }) => { const row = health.find(row => row.id === where.id); Object.assign(row, data); return row; }),
     },
@@ -137,7 +138,7 @@ describe('daily check-in capability and persistence', () => {
 
   it('denies administrators, coaches and patients, while nutritionists receive structured read-only records', async () => {
     const h = harness(); const token = await h.token();
-    await h.submit(token, { answers: { appetite: 0, bowel_extra: '真实姓名13912345678', bowel_ease: 'SMOOTH' } });
+    await h.submit(token, { answers: { appetite: 0, bowel_extra: '真实姓名13912345678', other_note: '其他私人观察', bowel_ease: 'SMOOTH' } });
     for (const role of ['ADMIN', 'EXERCISE_COACH', 'PATIENT']) {
       h.setRole(role);
       await expect(h.link()).rejects.toBeInstanceOf(ForbiddenException);
@@ -149,8 +150,30 @@ describe('daily check-in capability and persistence', () => {
     expect(view.canViewLink).toBe(true);
     expect(view.canManageLink).toBe(false);
     expect(view.items[0].answers).toEqual({ appetite: 0, bowel_ease: 'SMOOTH' });
-    expect(view.items[0]).toHaveProperty('redactedAnswerKeys', ['bowel_extra']);
-    expect(JSON.stringify(view)).not.toMatch(/真实姓名|13912345678/);
+    expect(view.items[0]).toHaveProperty('redactedAnswerKeys', ['bowel_extra', 'other_note']);
+    expect(JSON.stringify(view)).not.toMatch(/真实姓名|13912345678|其他私人观察/);
+  });
+
+  it('redacts both free-text observations in shared routine history while retaining them for authorized care staff', async () => {
+    const h = harness(); const token = await h.token();
+    const original = await h.submit(token, { answers: { other_note: '私人备注', bowel_extra: '排便备注', bowel_count: 0 } });
+    const routine = { read: jest.fn(async () => ({ ...original, revision: 'a'.repeat(64), recordCounts: { weight: 1 }, legacyMediaUnlinked: [] })) };
+    const service = new DailyCheckInService(h.prisma, h.clinical, undefined, routine as any);
+    h.setRole('NUTRITIONIST');
+    const hidden = await service.records({} as any, h.patient.id);
+    expect(hidden.items[0].answers).toEqual({ bowel_count: 0 });
+    expect(hidden.items[0]).toHaveProperty('redactedAnswerKeys', ['bowel_extra', 'other_note']);
+    h.setRole('HEALTH_MANAGER');
+    const visible = await service.records({} as any, h.patient.id);
+    expect(visible.items[0].answers).toEqual(original.answers);
+    expect(visible.items[0]).not.toHaveProperty('redactedAnswerKeys');
+  });
+
+  it('normalizes the optional other note and enforces its own text limit', () => {
+    expect(validateCheckInAnswers({ other_note: '  今日其他情况\n' })).toEqual({ other_note: '今日其他情况' });
+    expect(validateCheckInAnswers({ other_note: ' \n\t ' })).toEqual({});
+    expect(validateCheckInAnswers({ other_note: ' ' + '字'.repeat(500) + ' ' })).toEqual({ other_note: '字'.repeat(500) });
+    for (const other_note of [null, 1, [], {}, '字'.repeat(501)]) expect(() => validateCheckInAnswers({ other_note })).toThrow(BadRequestException);
   });
 
   it('lets an assigned nutritionist obtain the stable link and QR on first use without reset or revoke rights', async () => {
