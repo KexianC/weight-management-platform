@@ -163,10 +163,12 @@ describe('daily check-in capability and persistence', () => {
     const hidden = await service.records({} as any, h.patient.id);
     expect(hidden.items[0].answers).toEqual({ bowel_count: 0 });
     expect(hidden.items[0]).toHaveProperty('redactedAnswerKeys', ['bowel_extra', 'other_note']);
-    h.setRole('HEALTH_MANAGER');
-    const visible = await service.records({} as any, h.patient.id);
-    expect(visible.items[0].answers).toEqual(original.answers);
-    expect(visible.items[0]).not.toHaveProperty('redactedAnswerKeys');
+    for (const role of ['HEALTH_MANAGER', 'DOCTOR']) {
+      h.setRole(role);
+      const visible = await service.records({} as any, h.patient.id);
+      expect(visible.items[0].answers).toEqual(original.answers);
+      expect(visible.items[0]).not.toHaveProperty('redactedAnswerKeys');
+    }
   });
 
   it('normalizes the optional other note and enforces its own text limit', () => {
