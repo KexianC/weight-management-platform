@@ -8,6 +8,8 @@
 .daily-public-card { background: white; padding: 24px; margin-bottom: 16px; border: 1px solid #dcebed; border-radius: 20px; box-shadow: 0 7px 28px #20424c05; }
 .daily-public button { border: 1px solid #bdd9dd; border-radius: 12px; background: white; padding: 12px 18px; color: #216c77; cursor: pointer; min-height: 46px; }
 .daily-public-date { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 21px; margin-bottom: 24px; border-bottom: 1px solid #eaf0f2; color: #668088; font-size: 13px; }
+.daily-data-card h2 { margin: 0 0 16px; font-size: 19px; }
+.daily-waist-unit { margin-left: 4px; color: #668088; }
 .daily-weight-label { font-size: 17px; font-weight: 700; }
 .daily-weight-label > span { color: #c96749; background: #fff2e9; border-radius: 5px; padding: 3px 6px; margin-left: 6px; font-size: 11px; font-weight: 500; vertical-align: middle; }
 .daily-weight-input { display: flex; align-items: stretch; gap: 10px; margin-top: 18px; }
@@ -16,11 +18,6 @@
 .daily-weight-input select { flex: 0 0 106px; width: 106px; padding: 8px; border: 1px solid #c6dde1; border-radius: 12px; background: white; color: #416873; font-size: 14px; }
 .daily-submitted-note { color: #287d64; background: #edf8f0; padding: 10px; font-size: 12px; border-radius: 8px; display: flex; align-items: center; gap: 6px; }
 .daily-optional { padding: 20px 24px; }
-.daily-optional summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; cursor: pointer; font-weight: 650; list-style: none; min-height: 30px; }
-.daily-optional summary::-webkit-details-marker { display: none; }
-.daily-optional summary small { margin-left: 6px; color: #82989f; font-size: 12px; font-weight: 400; }
-.daily-expand-icon { color: #60848c; width: 18px; height: 18px; flex-shrink: 0; }
-.daily-optional[open] .daily-expand-icon { transform: rotate(180deg); }
 .daily-optional > fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .daily-answer-field { display: block; margin-top: 22px; font-size: 14px; line-height: 1.6; color: #365b65; }
 .daily-answer-field input,.daily-answer-field select,.daily-answer-field textarea { display: block; width: 100%; max-width: 100%; margin-top: 8px; border: 1px solid #d4e3e7; border-radius: 10px; padding: 12px 10px; font-size: 16px; color: #375f69; background: #fafcfd; }
@@ -38,7 +35,7 @@
 .daily-public-success strong small { font-size: 15px; font-weight: 400; }
 @media(max-width:360px) { .daily-public { padding-left: 12px; padding-right: 12px; }.daily-public-card { padding: 20px 16px; }.daily-weight-input input { padding: 12px 9px; }.daily-weight-input select { flex-basis: 96px; width: 96px; } }
 .daily-optional-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid #eaf0f2; }
-.daily-optional-section h2 { margin: 0; font-size: 17px; }
+.daily-optional h2 { margin: 0; font-size: 17px; }
 .daily-bowel-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
 .daily-other { margin-top: 0; font-weight: 650; }
 .daily-other textarea { font-weight: 400; }
