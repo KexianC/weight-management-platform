@@ -16,7 +16,7 @@ import { DailyRoutineService, ROUTINE_SOURCE, ROUTINE_TYPES, routineDate, routin
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/;
 const SOURCE = 'DAILY_CHECK_IN';
-const ANSWER_FIELDS = ['fatigue', 'hunger', 'appetite', 'sleep_quality', 'energy_complexion', 'bowel_count', 'stool_type', 'bowel_ease', 'bowel_extra', 'waist_cm', 'exercise_minutes', 'water_ml', 'sleep_hours', 'sleep_start', 'sleep_end', ...['breakfast', 'lunch', 'dinner'].flatMap(meal => [`${meal}_text`, `${meal}_photo_ids`])];
+const ANSWER_FIELDS = ['fatigue', 'hunger', 'appetite', 'sleep_quality', 'energy_complexion', 'bowel_count', 'stool_type', 'bowel_ease', 'bowel_extra', 'other_note', 'waist_cm', 'exercise_minutes', 'water_ml', 'sleep_hours', 'sleep_start', 'sleep_end', ...['breakfast', 'lunch', 'dinner'].flatMap(meal => [`${meal}_text`, `${meal}_photo_ids`])];
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 export const checkInDate = (now = new Date()) => new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
 const invalidLink = () => new NotFoundException('填报链接无效或已停用，请联系服务人员获取新链接');
@@ -91,6 +91,9 @@ export function validateCheckInAnswers(raw: unknown): Answers {
       result[key] = value;
     } else if (key === 'bowel_extra') {
       if (typeof value !== 'string' || value.length > 200) throw new BadRequestException('附加观察最多填写200字');
+      if (value.trim()) result[key] = value.trim();
+    } else if (key === 'other_note') {
+      if (typeof value !== 'string' || value.trim().length > 500) throw new BadRequestException('其他信息最多填写500字');
       if (value.trim()) result[key] = value.trim();
     } else throw new BadRequestException('包含不支持的填报字段');
   }
@@ -282,7 +285,8 @@ export class DailyCheckInService {
     const publicDto = actor ? undefined : dto as DailyCheckInSubmitDto;
     const firstLink = publicDto ? await this.resolve(this.prisma, publicDto.token) : undefined;
     const patientId = actor?.sub ?? firstLink!.patientId;
-    const changedFields = dto.changedFields ?? ['weightKg', ...ANSWER_FIELDS];
+    // Older full-form clients do not own fields introduced after their release.
+    const changedFields = dto.changedFields ?? ['weightKg', ...ANSWER_FIELDS.filter(field => field !== 'other_note' || Object.prototype.hasOwnProperty.call(dto.answers ?? {}, field))];
     if (!Array.isArray(changedFields) || changedFields.length > 32 || new Set(changedFields).size !== changedFields.length
       || changedFields.some(field => !['weightKg', ...ANSWER_FIELDS].includes(field))) throw new BadRequestException('修改字段无效');
     if (publicDto || changedFields.includes('weightKg')) {
@@ -327,7 +331,7 @@ export class DailyCheckInService {
     const items = await Promise.all(days.slice((page - 1) * pageSize, page * pageSize).map(async date => {
       const snapshot = await this.routine!.read(this.prisma, ownerId, date);
       const result = await this.routineView(snapshot, this.prisma, ownerId, undefined, actor);
-      if (actor.role === 'NUTRITIONIST') { const { bowel_extra: _private, ...safe } = result.answers; return { ...result, answers: safe, redactedAnswerKeys: ['bowel_extra'] }; }
+      if (actor.role === 'NUTRITIONIST') { const { bowel_extra: _private, other_note: _privateNote, ...safe } = result.answers; return { ...result, answers: safe, redactedAnswerKeys: ['bowel_extra', 'other_note'] }; }
       return result;
     }));
     return { items, total: days.length, page, pageSize, hasMore: page * pageSize < days.length, canViewLink: access.canViewLink, canManageLink: access.canManageLink };
@@ -476,9 +480,9 @@ export class DailyCheckInService {
     const items = await Promise.all(rows.map(async (row) => {
       const result = await this.recordView(row, this.prisma, undefined, actor);
       if (actor.role === 'NUTRITIONIST') {
-        // Bowel observations remain private; meal descriptions support assigned nutrition care.
-        const { bowel_extra: _privateText, ...safe } = result.answers;
-        return { ...result, answers: safe, redactedAnswerKeys: ['bowel_extra'] };
+        // Free-form observations remain private; meal descriptions support assigned nutrition care.
+        const { bowel_extra: _privateText, other_note: _privateNote, ...safe } = result.answers;
+        return { ...result, answers: safe, redactedAnswerKeys: ['bowel_extra', 'other_note'] };
       }
       return result;
     }));

@@ -9,6 +9,7 @@ export type DailyCheckInAnswers = {
   bowel_count?: number;
   bowel_ease?: 'SMOOTH' | 'STRAINED' | 'DIFFICULT' | 'BLOATING';
   bowel_extra?: string;
+  other_note?: string;
   stool_type?: number;
   waist_cm?: number;
   exercise_minutes?: number;
@@ -89,6 +90,7 @@ export const dailyCheckInQuestions: readonly DailyCheckInQuestion[] = [
     { value: 3, label: '3型：腊肠状，表面有裂痕' }, { value: 4, label: '4型：光滑柔软的腊肠或蛇形' },
     { value: 5, label: '5型：柔软块状，边缘清晰' }, { value: 6, label: '6型：糊状，边缘蓬松' }, { value: 7, label: '7型：完全水状' },
   ] },
+  { key: 'other_note', label: '其他' },
 ];
 
 export function dailyCheckInAnswerLabel(question: DailyCheckInQuestion, value: unknown): string {

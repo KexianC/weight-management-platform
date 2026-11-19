@@ -1,4 +1,5 @@
 import { DailyRoutineService, ROUTINE_SOURCE, routineDate, sleepDuration } from './daily-routine';
+import { DailyCheckInService } from './daily-check-in';
 
 function harness(initial: any[] = [], legacy: any[] = []) {
   const records = structuredClone(initial), days = structuredClone(legacy);
@@ -67,6 +68,47 @@ describe('shared routine uses real records without replacing their history', () 
     const result = await h.service.changed(h.tx, 'patient', '2026-11-13', ['weight']);
     expect(result.weightKg).toBeNull(); expect(result.answers).toMatchObject({ water_ml: 1500, lunch_text: 'lunch', lunch_photo_ids: ['photo'] });
     expect(result.hasData).toBe(true); expect(h.days).toHaveLength(0);
+  });
+
+  it('stores other notes in a weight-free draft, mirrors them with weight, and retains hidden historical fields on partial saves', async () => {
+    const prior = [record('s', 'SLEEP', { sleepHours: 8, payload: { sleep_start: '23:00', sleep_end: '07:00' } }),
+      record('e', 'EXERCISE', { payload: { durationMinutes: 20, activity: 'walking' } }),
+      record('m', 'DIET', { mealType: 'LUNCH', note: '原餐食', imageUrls: ['original-photo'] })];
+    const h = harness(prior);
+    let value = await h.service.apply(h.tx, 'patient', '2026-11-13', undefined,
+      { other_note: '待沟通', bowel_extra: '旧排便观察', water_ml: 1500, fatigue: 2 }, ['other_note', 'bowel_extra', 'water_ml', 'fatigue']);
+    expect(value.weightKg).toBeNull(); expect(value.hasData).toBe(true); expect(h.days).toHaveLength(0);
+    expect(value.meta).toMatchObject({ payload: { answers: { other_note: '待沟通' } } });
+    value = await h.service.apply(h.tx, 'patient', '2026-11-13', 70, { waist_cm: 80 }, ['weightKg', 'waist_cm']);
+    expect(value.answers).toMatchObject({ other_note: '待沟通', bowel_extra: '旧排便观察', water_ml: 1500, fatigue: 2, waist_cm: 80 });
+    expect(h.days[0].answers).toEqual(value.answers);
+    value = await h.service.apply(h.tx, 'patient', '2026-11-13', undefined, {}, ['other_note']);
+    expect(value.answers).not.toHaveProperty('other_note');
+    expect(value.answers).toMatchObject({ bowel_extra: '旧排便观察', water_ml: 1500, fatigue: 2, waist_cm: 80 });
+    expect(value.answers).toMatchObject({ sleep_hours: 8, sleep_start: '23:00', sleep_end: '07:00', exercise_minutes: 20, lunch_text: '原餐食', lunch_photo_ids: ['original-photo'] });
+    for (const row of prior) expect(h.records.find(saved => saved.id === row.id)).toEqual(row);
+    expect(h.days[0].answers).toEqual(value.answers);
+  });
+
+  it('accepts explicit note edits through public submissions without letting an older full-form client erase the new note', async () => {
+    const h = harness([record('w', 'WEIGHT', { weightKg: 70 })]);
+    h.tx.user = { findUnique: jest.fn(async () => ({ id: 'patient', role: 'PATIENT', status: 'ACTIVE', deletedAt: null })) };
+    h.tx.auditLog = { create: jest.fn(async () => ({})) };
+    const prisma = { ...h.tx, $transaction: (work: any) => work(h.tx) };
+    const api = new DailyCheckInService(prisma as any, {} as any, undefined, h.service);
+    jest.spyOn(api as any, 'resolve').mockResolvedValue({ patientId: 'patient' });
+    let current = await h.service.apply(h.tx, 'patient', '2026-11-13', undefined, { water_ml: 1500, bowel_extra: '旧观察' }, ['water_ml', 'bowel_extra']);
+    let result = await api.submit({ token: 'unit-capability', date: current.date, version: current.version, revision: current.revision, weightKg: 70,
+      answers: { other_note: '  其他记录  ' }, changedFields: ['other_note'] });
+    expect(result.answers).toMatchObject({ other_note: '其他记录', water_ml: 1500, bowel_extra: '旧观察' });
+    expect(h.days[0].answers).toEqual(result.answers);
+    expect((await api.context({ token: 'unit-capability' })).record?.answers).toEqual(result.answers);
+    result = await api.submit({ token: 'unit-capability', date: current.date, version: result.version, weightKg: 70, answers: { bowel_count: 0 } });
+    expect(result.answers).toMatchObject({ other_note: '其他记录', bowel_count: 0 });
+    result = await api.submit({ token: 'unit-capability', date: current.date, version: result.version, weightKg: 70,
+      answers: { other_note: '   ' }, changedFields: ['other_note'] });
+    expect(result.answers).not.toHaveProperty('other_note'); expect(result.answers.bowel_count).toBe(0);
+    expect(h.days[0].answers).toEqual(result.answers);
   });
 
   it('converts legacy fields in their original day once and never overwrites existing typed entries or weight', async () => {
