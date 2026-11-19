@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CheckCircledIcon, ChevronDownIcon, ReloadIcon } from '@radix-ui/react-icons';
+import { CheckCircledIcon, ReloadIcon } from '@radix-ui/react-icons';
 import logoUrl from './assets/medtalent-logo.png';
 import { bowelEaseOptions, dailyMealCount, dailyMeals, validateDailyPhoto } from './daily-check-in-api';
 import type { DailyCheckInAnswers, DailyCheckInContext, DailyCheckInPhoto, DailyCheckInRecord, DailyMeal } from './daily-check-in-api';
@@ -34,7 +34,7 @@ async function uploadPhoto(token: string, date: string, meal: DailyMeal, file: F
   return photo;
 }
 export function normalizedDailyWeight(raw: string, unit: 'KG' | 'JIN'): number {
-  if (!raw.trim()) throw new Error('请填写今日空腹体重。');
+  if (!raw.trim()) throw new Error('请填写体重。');
   const value = Number(raw) / (unit === 'JIN' ? 2 : 1);
   if (!Number.isFinite(value) || value < 20 || value > 400) throw new Error('请确认体重和单位：20–400 公斤，或 40–800 斤。');
   return Math.round(value * 100) / 100;
@@ -242,17 +242,17 @@ function DailyCheckInForm({ token }: { token: string }) {
         <CheckCircledIcon /><h2>今日填报已保存</h2><p>{context.date}{clientCode && ` · ${clientCode}`}</p><strong>{Number(context.record?.weightKg).toFixed(2)} <small>公斤</small></strong>
         <button type="button" onClick={() => setSaved(false)}>修改今日填报</button>
       </section> : <form onSubmit={submit}>
-        <section className="daily-public-card daily-weight-card">
+        <section className="daily-public-card daily-data-card" aria-labelledby="daily-data-heading">
           <div className="daily-public-date">{clientCode && <span>{clientCode}</span>}<time dateTime={context.date}>{context.date}</time></div>
+          <h2 id="daily-data-heading">今日数据</h2>
           {context.record && <p className="daily-submitted-note"><CheckCircledIcon /> 今日已填报</p>}
-          <label htmlFor="daily-weight" className="daily-weight-label">今日空腹体重 <span>必填</span></label>
+          <label htmlFor="daily-weight" className="daily-weight-label">体重 <span>必填</span></label>
           <div className="daily-weight-input"><input id="daily-weight" name="weight" type="number" inputMode="decimal" required min={unit === 'KG' ? 20 : 40} max={unit === 'KG' ? 400 : 800} step="0.01" placeholder={unit === 'KG' ? '例如 65.5' : '例如 131'} value={weight} onChange={event => setWeight(event.target.value)} disabled={saving} /><select aria-label="体重单位" value={unit} onChange={event => changeUnit(event.target.value as 'KG' | 'JIN')} disabled={saving}><option value="KG">公斤 (kg)</option><option value="JIN">斤</option></select></div>
+          <label className="daily-answer-field">腰围 <small className="daily-waist-unit">cm</small><input type="number" inputMode="decimal" min="20" max="300" step="0.01" placeholder="未填写" value={answers.waist_cm ?? ''} onChange={event => answer('waist_cm', event.target.value, true)} disabled={saving} /></label>
         </section>
-        <details className="daily-public-card daily-optional" open>
-          <summary><span>今日状态 <small>选填</small></span><ChevronDownIcon className="daily-expand-icon" aria-hidden="true" /></summary>
+        <section className="daily-public-card daily-optional">
           <fieldset disabled={saving}>
-            <label className="daily-answer-field">腰围 (cm)<input type="number" inputMode="decimal" min="20" max="300" step="0.01" placeholder="未填写" value={answers.waist_cm ?? ''} onChange={event => answer('waist_cm', event.target.value, true)} /></label>
-            <section className="daily-optional-section daily-meals"><h2>三餐 <small>已记录 {dailyMealCount(serializeDailyAnswers(answers, photos))}/3 餐</small></h2>
+            <section className="daily-meals"><h2>三餐 <small>已记录 {dailyMealCount(serializeDailyAnswers(answers, photos))}/3 餐</small></h2>
               {dailyMeals.map(meal => <fieldset className="daily-meal" key={meal.key}>
                 <label className="daily-answer-field">{meal.label}<textarea aria-label={meal.label} rows={2} maxLength={500} placeholder="吃了什么" value={answers[meal.textKey] ?? ''} onChange={event => answer(meal.textKey, event.target.value)} /></label>
                 <div className="daily-photo-grid">{photos.filter(photo => photo.meal === meal.key).map((photo, index) => <div className="daily-photo" key={photo.key}>
@@ -276,7 +276,7 @@ function DailyCheckInForm({ token }: { token: string }) {
               <label className="daily-answer-field daily-other">其他<textarea rows={3} maxLength={500} placeholder="选填" value={answers.other_note ?? ''} onChange={event => answer('other_note', event.target.value)} /></label>
             </div>
           </fieldset>
-        </details>
+        </section>
         {error && <div className="daily-public-error" role="alert">{error}{needsReload && <button type="button" onClick={() => setReload(x => x + 1)}>重新载入今日填报</button>}</div>}
         <button className="daily-public-submit" type="submit" disabled={saving || needsReload || uploading}>{saving ? '正在保存…' : uploading ? '照片上传中…' : context.record ? '保存今日修改' : '提交今日填报'}</button>
       </form>)}
